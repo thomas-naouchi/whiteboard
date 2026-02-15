@@ -7,28 +7,32 @@ interface FileUploadProps {
 }
 
 export default function FileUpload({ onFilesChange }: FileUploadProps) {
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]); //notify parent component of file changes
+  const [error, setError] = useState<string | null>(null); //error state for validation messages
 
   function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
+    //handle file input changes and perform validation
     const files = event.target.files;
     if (!files) return;
 
-    const fileArray = Array.from(files);
+    const fileArray = Array.from(files); //convert FileList to array for easier manipulation
 
     if (fileArray.length === 0) {
+      //validate that at least one file is selected
       setError("Please select at least one file.");
       return;
     }
 
     if (fileArray.length > 5) {
+      //validate that no more than 5 files are selected
       setError("You can upload a maximum of 5 files.");
       return;
     }
 
-    const allowedTypes = ["application/pdf", "text/plain"];
+    const allowedTypes = ["application/pdf", "text/plain"]; //define allowed MIME types for validation
 
     for (const file of fileArray) {
+      //validate that each file is of an allowed type
       if (!allowedTypes.includes(file.type)) {
         setError("Only PDF and TXT files are allowed.");
         return;
@@ -41,6 +45,7 @@ export default function FileUpload({ onFilesChange }: FileUploadProps) {
   }
 
   function removeFile(indexToRemove: number) {
+    //remove a file from the selected files list and update state
     const updatedFiles = selectedFiles.filter(
       (_, index) => index !== indexToRemove,
     );
@@ -50,6 +55,7 @@ export default function FileUpload({ onFilesChange }: FileUploadProps) {
   }
 
   return (
+    //render file input and display selected files with remove option
     <div style={{ marginTop: "1rem" }}>
       <h2>Upload Files (1–5)</h2>
 
