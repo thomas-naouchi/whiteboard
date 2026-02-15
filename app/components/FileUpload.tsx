@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 interface FileUploadProps {
   onFilesChange: (files: File[]) => void;
@@ -9,6 +9,7 @@ interface FileUploadProps {
 export default function FileUpload({ onFilesChange }: FileUploadProps) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]); //notify parent component of file changes
   const [error, setError] = useState<string | null>(null); //error state for validation messages
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
     //handle file input changes and perform validation
@@ -52,6 +53,9 @@ export default function FileUpload({ onFilesChange }: FileUploadProps) {
 
     setSelectedFiles(updatedFiles);
     onFilesChange(updatedFiles);
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
   }
 
   return (
@@ -59,7 +63,13 @@ export default function FileUpload({ onFilesChange }: FileUploadProps) {
     <div style={{ marginTop: "1rem" }}>
       <h2>Upload Files (1–5)</h2>
 
-      <input type="file" multiple accept=".pdf,.txt" onChange={handleChange} />
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept=".pdf,.txt"
+        onChange={handleChange}
+      />
 
       {error && <p style={{ color: "red" }}>{error}</p>}
 
