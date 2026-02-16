@@ -32,8 +32,9 @@ export async function POST(req: Request) {
       answer: resp.choices?.[0]?.message?.content ?? "",
     });
   } catch (e: any) {
+    console.error("Error handling /api/chat POST request:", e);
     return NextResponse.json(
-      { error: e?.message ?? "Server error" },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
