@@ -5,6 +5,17 @@ import ChatBar from "./components/ChatBar";
 import ChatHistory, { type ChatMessage } from "./components/ChatHistory";
 import "./chat.css";
 
+//filters text files only (pdf parsing must be handled later)
+//transforms text files into one long string
+async function filesToDocumentText(files: File[]) {
+  const txtFiles = files.filter((f) => f.name.toLowerCase().endsWith(".txt"));
+
+  const parts = await Promise.all(
+    txtFiles.map(async (f) => `# ${f.name}\n${await f.text()}`)
+  );
+  return parts.join("\n\n");
+}
+
 //we are inside app/chat/page.tsx so we go up one level and into components
 export default function ChatPage() {
   //stores all messages sent by the user
@@ -13,22 +24,66 @@ export default function ChatPage() {
 
   //called when ChatBar sends a new message
   async function handleNewMessage(message: string, files: File[]) {
-    setIsSending(true);
-    //add the new message to the existing messages array
+  setIsSending(true);
+
+  const history = messages.map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
+
+  setMessages((prev) => [
+    ...prev,
+    {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: message,
+      attachments: files.map((file) => ({
+        name: file.name,
+        size: file.size,
+      })),
+    },
+  ]);
+
+  try {
+    const documentText = await filesToDocumentText(files);
+
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, history, documentText }),
+    });
+
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.error || `Request failed: ${res.status}`);
+    }
+
+    const data = await res.json();
+
     setMessages((prev) => [
       ...prev,
       {
         id: crypto.randomUUID(),
-        role: "user",
-        content: message,
-        attachments: files.map((file) => ({
-          name: file.name,
-          size: file.size,
-        })),
+        role: "assistant",
+        content: data.answer ?? "(no answer)",
       },
     ]);
+  } catch (err) {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content:
+          err instanceof Error
+            ? `Error: ${err.message}`
+            : "Error: something went wrong.",
+      },
+    ]);
+  } finally {
     setIsSending(false);
   }
+}
 
   //clearshistory
   function handleClearHistory() {
