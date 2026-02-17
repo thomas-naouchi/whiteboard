@@ -3,6 +3,7 @@
 import { useState } from "react";
 import ChatBar from "./components/ChatBar";
 import ChatHistory from "./components/ChatHistory";
+import "./chat.css";
 
 //we are inside app/chat/page.tsx so we go up one level and into components
 export default function ChatPage() {
@@ -24,12 +25,12 @@ export default function ChatPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-      <header className="mb-4">
-        <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+    <main className="chat-page">
+      <header className="chat-page-header">
+        <h1 className="chat-page-title">
           Whiteboard Chat
         </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="chat-page-subtitle">
           Ask questions and review your recent prompts below.
         </p>
       </header>
