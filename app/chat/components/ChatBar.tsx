@@ -3,91 +3,85 @@
 import { useState, type KeyboardEvent } from "react";
 
 interface ChatBarProps {
-  onSendMessage: (message: string) => void;
- 
+  onSendMessage: (message: string) => void | Promise<void>;
+  isSending: boolean;
 }
 
-export default function ChatBar({ onSendMessage }: ChatBarProps) {
-  //message what the user is typing in the input
+const MAX_MESSAGE_LENGTH = 500;
+
+export default function ChatBar({ onSendMessage, isSending }: ChatBarProps) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  function handleSend() {
-    //Remove spaces from the beginning/end so "  " becomes empty
+  async function handleSend() {
     const trimmed = message.trim();
 
-    //prevent sending empty message
     if (!trimmed) {
       setError("Please type a question before sending.");
-      return; //it stops here and do not send
+      return;
     }
 
-    //prevent sending very long messages
-    if (trimmed.length > 500) {
-      setError("Message too long (max 500 characters).");
-      return; //it stop here do not  send
+    if (trimmed.length > MAX_MESSAGE_LENGTH) {
+      setError(`Message too long (max ${MAX_MESSAGE_LENGTH} characters).`);
+      return;
     }
 
-    //if validation passes
-    setError(null); 
-    onSendMessage(trimmed); 
-    setMessage(""); //clear the input box after sending
+    setError(null);
+    await onSendMessage(trimmed);
+    setMessage("");
   }
 
-  function handleKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    //if the user presses Enter we send the message
-    if (e.key === "Enter") {
-      e.preventDefault(); //prevents default behavior example form submit/newline
-      handleSend(); 
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (!isSending) {
+        void handleSend();
+      }
     }
   }
 
   return (
-    //container for the whole chat input area
-    <div style={{ marginTop: "1rem" }}>
-      <h2>Ask a Question</h2>
+    <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+      <label
+        htmlFor="chat-message-input"
+        className="mb-2 block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+      >
+        Ask a question
+      </label>
 
-      
-      <div style={{ display: "flex", gap: "10px", marginTop: "0.5rem" }}>
-
-        <input
-          type="text"
-          value={message}//controlled input it is value always comes from state
-          onChange={(e) => setMessage(e.target.value)}//update state whenever user types
+      <div className="flex items-end gap-3">
+        <textarea
+          id="chat-message-input"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
           onKeyDown={handleKeyDown}
-        
-
           placeholder="Type your question here..."
-          style={{
-            flex: 1, 
-            padding: "10px",
-            borderRadius: "8px",
-            border: "1px solid #ccc",
-            outline: "none",
-          }}
+          rows={3}
+          disabled={isSending}
+          className="min-h-[92px] flex-1 resize-y rounded-md border border-zinc-300 px-3 py-2 text-sm outline-none transition focus:border-zinc-500 focus:ring-2 focus:ring-zinc-200 disabled:cursor-not-allowed disabled:opacity-70 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-zinc-500 dark:focus:ring-zinc-700"
         />
 
         <button
-          onClick={handleSend}//when clicked it sends the current input message
-
-          style={{
-            backgroundColor: "black",
-            color: "white",
-            border: "none",
-            padding: "10px 16px",
-            borderRadius: "8px",
-            cursor: "pointer",
-          }}
+          type="button"
+          onClick={() => void handleSend()}
+          disabled={isSending || message.trim().length === 0}
+          className="h-[42px] rounded-md bg-zinc-900 px-4 text-sm font-medium text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
         >
-          Send
+          {isSending ? "Sending..." : "Send"}
         </button>
       </div>
 
-      {error && (
-        <p style={{ color: "white", marginTop: "0.5rem" }}>
-          {error}
-          
+      <div className="mt-2 flex items-center justify-between text-xs">
+        <p className="text-zinc-500 dark:text-zinc-400">
+          Press Enter to send, Shift+Enter for a new line.
         </p>
+        <p className="text-zinc-500 dark:text-zinc-400">
+          {message.trim().length}/{MAX_MESSAGE_LENGTH}
+        </p>
+      </div>
+
+      {error && (
+        <p className="mt-2 text-sm text-red-500 dark:text-red-400">{error}</p>
       )}
     </div>
   );
