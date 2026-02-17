@@ -26,6 +26,7 @@ export async function POST(req: Request) {
         { role: "user", content: prompt },
       ],
       temperature: 0,
+      max_tokens : 500,
     });
 
     return NextResponse.json({
