@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import ChatBar from "../components/ChatBar";
+import ChatBar from "./components/ChatBar";
 
 //we are inside app/chat/page.tsx so we go up one level and into components
 export default function ChatPage() {
