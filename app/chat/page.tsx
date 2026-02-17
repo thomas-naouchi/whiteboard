@@ -12,7 +12,7 @@ export default function ChatPage() {
   const [isSending, setIsSending] = useState(false);
 
   //called when ChatBar sends a new message
-  async function handleNewMessage(message: string) {
+  async function handleNewMessage(message: string, files: File[]) {
     setIsSending(true);
     //add the new message to the existing messages array
     setMessages((prev) => [
@@ -21,6 +21,10 @@ export default function ChatPage() {
         id: crypto.randomUUID(),
         role: "user",
         content: message,
+        attachments: files.map((file) => ({
+          name: file.name,
+          size: file.size,
+        })),
       },
     ]);
     setIsSending(false);

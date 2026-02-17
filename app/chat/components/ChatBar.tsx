@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, type KeyboardEvent } from "react";
+import FileUpload from "./FileUpload";
 
 interface ChatBarProps {
-  onSendMessage: (message: string) => void | Promise<void>;
+  onSendMessage: (message: string, files: File[]) => void | Promise<void>;
   isSending: boolean;
 }
 
@@ -12,6 +13,9 @@ const MAX_MESSAGE_LENGTH = 500;
 export default function ChatBar({ onSendMessage, isSending }: ChatBarProps) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [isFilePopupOpen, setIsFilePopupOpen] = useState(false);
+  const [uploaderKey, setUploaderKey] = useState(0);
 
   async function handleSend() {
     const trimmed = message.trim();
@@ -27,8 +31,11 @@ export default function ChatBar({ onSendMessage, isSending }: ChatBarProps) {
     }
 
     setError(null);
-    await onSendMessage(trimmed);
+    await onSendMessage(trimmed, selectedFiles);
     setMessage("");
+    setSelectedFiles([]);
+    setIsFilePopupOpen(false);
+    setUploaderKey((prev) => prev + 1);
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -66,14 +73,39 @@ export default function ChatBar({ onSendMessage, isSending }: ChatBarProps) {
         >
           {isSending ? "Sending..." : "Send"}
         </button>
+
+        <button
+          type="button"
+          onClick={() => setIsFilePopupOpen((prev) => !prev)}
+          disabled={isSending}
+          className="chat-bar-attach"
+          aria-label="Attach files"
+          title="Attach files"
+        >
+          +
+        </button>
       </div>
+
+      {isFilePopupOpen && (
+        <div className="chat-bar-file-popup">
+          <p className="chat-bar-file-popup-title">Attach files</p>
+          <p className="chat-bar-file-popup-subtitle">
+            Upload up to 5 files (.pdf or .txt)
+          </p>
+          <FileUpload
+            key={uploaderKey}
+            onFilesChange={setSelectedFiles}
+          />
+        </div>
+      )}
 
       <div className="chat-bar-meta">
         <p>
           Press Enter to send, Shift+Enter for a new line.
         </p>
         <p>
-          {message.trim().length}/{MAX_MESSAGE_LENGTH}
+          {selectedFiles.length} file(s) attached | {message.trim().length}/
+          {MAX_MESSAGE_LENGTH}
         </p>
       </div>
 
