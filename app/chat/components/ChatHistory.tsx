@@ -4,6 +4,10 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  attachments?: Array<{
+    name: string;
+    size: number;
+  }>;
 }
 
 interface ChatHistoryProps {
@@ -61,7 +65,16 @@ export default function ChatHistory({
                     : "chat-history-item-assistant"
                 }`}
               >
-                {msg.content}
+                <p>{msg.content}</p>
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <ul className="chat-history-attachments">
+                    {msg.attachments.map((file, index) => (
+                      <li key={`${msg.id}-file-${index}`}>
+                        {file.name} ({Math.max(1, Math.round(file.size / 1024))} KB)
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </article>
             </div>
           ))}
