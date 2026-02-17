@@ -2,20 +2,27 @@
 
 import { useState } from "react";
 import ChatBar from "./components/ChatBar";
-import ChatHistory from "./components/ChatHistory";
+import ChatHistory, { type ChatMessage } from "./components/ChatHistory";
 import "./chat.css";
 
 //we are inside app/chat/page.tsx so we go up one level and into components
 export default function ChatPage() {
   //stores all messages sent by the user
-  const [messages, setMessages] = useState<string[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
 
   //called when ChatBar sends a new message
   async function handleNewMessage(message: string) {
     setIsSending(true);
     //add the new message to the existing messages array
-    setMessages((prev) => [...prev, message]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: message,
+      },
+    ]);
     setIsSending(false);
   }
 

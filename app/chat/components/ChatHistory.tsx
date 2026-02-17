@@ -1,7 +1,13 @@
 "use client";
 
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
+
 interface ChatHistoryProps {
-  messages: string[];
+  messages: ChatMessage[];
   onClearHistory: () => void;
 }
 
@@ -39,13 +45,25 @@ export default function ChatHistory({
         </div>
       ) : (
         <div className="chat-history-list">
-          {messages.map((msg, index) => (
-            <article
-              key={`${index}-${msg.slice(0, 10)}`}
-              className="chat-history-item"
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`chat-history-row ${
+                msg.role === "user"
+                  ? "chat-history-row-user"
+                  : "chat-history-row-assistant"
+              }`}
             >
-              {msg}
-            </article>
+              <article
+                className={`chat-history-item ${
+                  msg.role === "user"
+                    ? "chat-history-item-user"
+                    : "chat-history-item-assistant"
+                }`}
+              >
+                {msg.content}
+              </article>
+            </div>
           ))}
         </div>
       )}
