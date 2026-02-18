@@ -22,14 +22,16 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
 
+  const [persistedDocText, setPersistedDocText] = useState(""); //uploaded document text persist along the session
+
   //called when ChatBar sends a new message
   async function handleNewMessage(message: string, files: File[]) {
-  setIsSending(true);
+    setIsSending(true);
 
-  const history = messages.map((m) => ({
-    role: m.role,
-    content: m.content,
-  }));
+    const history = messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
 
   setMessages((prev) => [
     ...prev,
@@ -45,12 +47,23 @@ export default function ChatPage() {
   ]);
 
   try {
-    const documentText = await filesToDocumentText(files);
+    const newDocText = await filesToDocumentText(files);
+    //combines old text files with new files (if found)
+    const combinedDocText = newDocText
+      ? (persistedDocText ? `${persistedDocText}\n\n${newDocText}` : newDocText)
+      : persistedDocText;
+
+    // update persisted storage only if new text was uploaded
+    if (newDocText) setPersistedDocText(combinedDocText);
 
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history, documentText }),
+      body: JSON.stringify({ 
+        message, 
+        history,
+        documentText : combinedDocText,
+      }),
     });
 
     if (!res.ok) {
@@ -85,9 +98,10 @@ export default function ChatPage() {
   }
 }
 
-  //clearshistory
+  //clears history
   function handleClearHistory() {
     setMessages([]);
+    setPersistedDocText("");
   }
 
   return (
