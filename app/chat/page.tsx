@@ -8,10 +8,18 @@ import "./chat.css";
 //filters text files only (pdf parsing must be handled later)
 //transforms text files into one long string
 async function filesToDocumentText(files: File[]) {
+  const lowerNames = files.map((f) => f.name.toLowerCase());
   const txtFiles = files.filter((f) => f.name.toLowerCase().endsWith(".txt"));
+  const hasPdf = lowerNames.some((name) => name.endsWith(".pdf"));
+
+  if (txtFiles.length === 0 && hasPdf) {
+    throw new Error(
+      "PDF files are not yet supported. Please convert your PDF to a .txt file and upload that instead.",
+    );
+  }
 
   const parts = await Promise.all(
-    txtFiles.map(async (f) => `# ${f.name}\n${await f.text()}`)
+    txtFiles.map(async (f) => `# ${f.name}\n${await f.text()}`),
   );
   return parts.join("\n\n");
 }

@@ -1,40 +1,48 @@
 .chat-page {
+  background: radial-gradient(circle at top, #e0f2fe 0, #bfdbfe 35%, #93c5fd 100%);
   margin-left: auto;
   margin-right: auto;
   max-width: 48rem;
   padding: 2rem 1rem;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
 .chat-page-header {
-  margin-bottom: 1rem;
+  margin-bottom: 0.25rem;
 }
 
 .chat-page-title {
-  color: rgb(24 24 27);
-  font-size: 1.875rem;
+  color: #0f172a;
+  font-size: 2.25rem;
   font-weight: 700;
   letter-spacing: -0.025em;
-  line-height: 2.25rem;
+  line-height: 2.5rem;
 }
 
 .chat-page-subtitle {
-  color: rgb(82 82 91);
-  font-size: 0.875rem;
+  color: #0f172a;
+  font-size: 0.9rem;
   line-height: 1.25rem;
   margin-top: 0.25rem;
+  opacity: 0.9;
 }
 
 .chat-bar {
-  background: rgb(255 255 255);
-  border: 1px solid rgb(228 228 231);
+  background: #e0f2fe;
+  border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 0.5rem;
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  box-shadow:
+    0 18px 45px rgba(15, 23, 42, 0.19),
+    0 2px 8px rgba(15, 23, 42, 0.12);
   margin-top: 1rem;
   padding: 1rem;
 }
 
 .chat-bar-label {
-  color: rgb(63 63 70);
+  color: #0f172a;
   display: block;
   font-size: 0.875rem;
   font-weight: 500;
@@ -51,8 +59,8 @@
 
 .chat-bar-attach {
   align-items: center;
-  background: rgb(244 244 245);
-  border: 1px solid rgb(212 212 216);
+  background: #bfdbfe;
+  border: 1px solid rgba(15, 23, 42, 0.12);
   border-radius: 9999px;
   color: rgb(39 39 42);
   display: inline-flex;
@@ -65,7 +73,7 @@
 }
 
 .chat-bar-attach:hover {
-  background: rgb(228 228 231);
+  background: #93c5fd;
 }
 
 .chat-bar-attach:disabled {
@@ -74,8 +82,8 @@
 }
 
 .chat-bar-file-popup {
-  background: rgb(255 255 255);
-  border: 1px solid rgb(212 212 216);
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(148, 163, 184, 0.4);
   border-radius: 0.5rem;
   box-shadow: 0 12px 24px rgb(0 0 0 / 0.12);
   margin-top: 0.5rem;
@@ -98,7 +106,7 @@
 }
 
 .chat-bar-textarea {
-  border: 1px solid rgb(212 212 216);
+  border: 1px solid rgba(148, 163, 184, 0.8);
   border-radius: 0.375rem;
   flex: 1;
   font-size: 0.875rem;
@@ -111,8 +119,8 @@
 }
 
 .chat-bar-textarea:focus {
-  border-color: rgb(113 113 122);
-  box-shadow: 0 0 0 2px rgb(228 228 231);
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35);
 }
 
 .chat-bar-textarea:disabled {
@@ -121,7 +129,7 @@
 }
 
 .chat-bar-send {
-  background: rgb(24 24 27);
+  background: #2563eb;
   border: 0;
   border-radius: 0.375rem;
   color: rgb(255 255 255);
@@ -133,7 +141,7 @@
 }
 
 .chat-bar-send:hover {
-  background: rgb(63 63 70);
+  background: #1d4ed8;
 }
 
 .chat-bar-send:disabled {
@@ -143,7 +151,7 @@
 
 .chat-bar-meta {
   align-items: center;
-  color: rgb(113 113 122);
+  color: rgba(15, 23, 42, 0.7);
   display: flex;
   font-size: 0.75rem;
   justify-content: space-between;
@@ -159,12 +167,14 @@
 }
 
 .chat-history {
-  background: linear-gradient(to bottom, rgb(250 250 250), rgb(255 255 255));
-  border: 1px solid rgb(228 228 231);
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.45);
   border-radius: 0.75rem;
-  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  margin-top: 1.5rem;
-  padding: 1rem;
+  box-shadow:
+    0 18px 45px rgba(15, 23, 42, 0.22),
+    0 2px 8px rgba(15, 23, 42, 0.14);
+  margin-top: 1.25rem;
+  padding: 1.1rem;
 }
 
 .chat-history-header {
