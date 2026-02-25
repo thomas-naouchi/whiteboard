@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import * as officeParser from "officeparser";
 import pdf from "pdf-parse";
+import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 
@@ -35,6 +36,12 @@ async function extractTextFromFile(file: File): Promise<string> {
   throw new Error("Unsupported file type. Allowed: .txt, .pdf, .pptx");
 }
 
+const STORAGE_BUCKET = "whiteboard-files";
+
+function sanitizeStorageFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
@@ -42,6 +49,7 @@ export async function POST(req: Request) {
     const rawMessage = formData.get("message");
     const rawHistory = formData.get("history");
     const rawPersistedDoc = formData.get("persistedDocumentText");
+    const rawSessionId = formData.get("sessionId");
 
     const message =
       typeof rawMessage === "string" ? rawMessage.trim() : undefined;
@@ -77,6 +85,11 @@ export async function POST(req: Request) {
 
     let combinedDocumentText =
       typeof rawPersistedDoc === "string" ? rawPersistedDoc : "";
+
+    let sessionId =
+      typeof rawSessionId === "string" && rawSessionId.length > 0
+        ? rawSessionId
+        : null;
 
     const uploadedFiles = formData
       .getAll("files")
@@ -115,6 +128,76 @@ export async function POST(req: Request) {
     const prompt = `DOCUMENT:\n${combinedDocumentText}\n\nQUESTION:\n${message}`;
 
     const client = getClient();
+
+    // Persist to Supabase if configured
+    let supabaseError: Error | null = null;
+    try {
+      const supabase = getSupabaseServerClient();
+
+      if (!sessionId) {
+        const { data, error } = await supabase
+          .from("whiteboard_sessions")
+          .insert({
+            title: "Whiteboard Chat Session",
+          })
+          .select("id")
+          .single();
+
+        if (error) {
+          throw error;
+        }
+        sessionId = data.id as string;
+      }
+
+      const { error: msgError } = await supabase
+        .from("whiteboard_messages")
+        .insert([
+          {
+            session_id: sessionId,
+            role: "user",
+            content: message,
+          },
+        ]);
+
+      if (msgError) {
+        throw msgError;
+      }
+
+      // Store uploaded files in Storage and record in whiteboard_files
+      if (uploadedFiles.length > 0 && sessionId) {
+        for (const file of uploadedFiles) {
+          const path = `${sessionId}/${crypto.randomUUID()}-${sanitizeStorageFileName(file.name)}`;
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const { error: uploadErr } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .upload(path, buffer, {
+              contentType: file.type || "application/octet-stream",
+              upsert: false,
+            });
+          if (uploadErr) {
+            throw uploadErr;
+          }
+          const { error: fileRowErr } = await supabase
+            .from("whiteboard_files")
+            .insert({
+              session_id: sessionId,
+              file_name: file.name,
+              storage_path: path,
+              content_type: file.type || null,
+              byte_size: file.size,
+            });
+          if (fileRowErr) {
+            throw fileRowErr;
+          }
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error) {
+        supabaseError = err;
+        console.error("Supabase persistence error:", err);
+      }
+    }
+
     const resp = await client.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [
@@ -129,9 +212,34 @@ export async function POST(req: Request) {
       max_tokens: 500,
     });
 
+    const answer = resp.choices?.[0]?.message?.content ?? "";
+
+    // Persist assistant message if Supabase is available and sessionId exists
+    if (sessionId) {
+      try {
+        const supabase = getSupabaseServerClient();
+        const { error: msgError } = await supabase
+          .from("whiteboard_messages")
+          .insert([
+            {
+              session_id: sessionId,
+              role: "assistant",
+              content: answer,
+            },
+          ]);
+        if (msgError) {
+          throw msgError;
+        }
+      } catch (err) {
+        console.error("Supabase assistant persistence error:", err);
+      }
+    }
+
     return NextResponse.json({
       answer: resp.choices?.[0]?.message?.content ?? "",
       documentText: combinedDocumentText,
+      sessionId,
+      supabaseWarning: supabaseError ? supabaseError.message : undefined,
     });
   } catch (e: any) {
     console.error("Error handling /api/chat POST request:", e);

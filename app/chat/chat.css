@@ -30,6 +30,17 @@
   opacity: 0.9;
 }
 
+.chat-page-supabase-warning {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: 0.375rem;
+  color: #92400e;
+  font-size: 0.8rem;
+  line-height: 1.25rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+}
+
 .chat-bar {
   background: #e0f2fe;
   border: 1px solid rgba(15, 23, 42, 0.08);
