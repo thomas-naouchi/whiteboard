@@ -21,6 +21,8 @@ async function extractTextFromFile(file: File): Promise<string> {
     return await file.text();
   }
 
+  
+  
   if (lowerName.endsWith(".pdf")) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const result = await pdf(buffer);
