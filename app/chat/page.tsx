@@ -15,8 +15,8 @@ async function filesToDocumentText(files: File[]) {
         return `# ${file.name}\n${await file.text()}`;
       }
 
-      // PDF files → send to parser API
-      if (file.name.toLowerCase().endsWith(".pdf")) {
+      // PDF and PPTX files → send to parser API
+      if (file.name.toLowerCase().endsWith(".pdf") || file.name.toLowerCase().endsWith(".pptx")) {
         const formData = new FormData();
         formData.append("file", file);
 
@@ -26,7 +26,8 @@ async function filesToDocumentText(files: File[]) {
         });
 
         if (!res.ok) {
-          throw new Error("Failed to parse PDF");
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || `Failed to parse ${file.name}`);
         }
 
         const data = await res.json();
