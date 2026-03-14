@@ -13,7 +13,7 @@ export async function POST(req: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    const pdfParse = (await import("pdf-parse")) as any;
+    const pdfParse = require("pdf-parse");
 
     const data = await pdfParse(buffer);
 

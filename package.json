@@ -12,7 +12,7 @@
     "@thednp/dommatrix": "^3.0.2",
     "next": "16.1.6",
     "openai": "^6.22.0",
-    "pdf-parse": "^2.4.5",
+    "pdf-parse": "^1.1.1",
     "pdfjs-dist": "^5.5.207",
     "react": "19.2.3",
     "react-dom": "19.2.3"
