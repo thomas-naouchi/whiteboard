@@ -90,7 +90,7 @@ export default function ChatBar({ onSendMessage, isSending }: ChatBarProps) {
         <div className="chat-bar-file-popup">
           <p className="chat-bar-file-popup-title">Attach files</p>
           <p className="chat-bar-file-popup-subtitle">
-            Upload up to 5 files (.pdf or .txt)
+            Upload up to 5 files (.pdf, .txt, .docx or .pptx)
           </p>
           <FileUpload
             key={uploaderKey}
