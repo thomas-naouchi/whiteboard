@@ -2,6 +2,11 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 
+const mammoth = require("mammoth");
+const fs = require("fs");
+const path = require("path");
+const parsePptx = require("pptx-text-parser");
+
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
@@ -23,12 +28,27 @@ export async function POST(req: Request) {
     });
   }
 
+  if (fileName.endsWith(".docx")) {
+      const result = await mammoth.extractRawText({ buffer });
+
+      return NextResponse.json({
+        text: result.value,
+      });
+    }
+
   if (fileName.endsWith(".pptx")) {
-    return NextResponse.json(
-      {error: "PPTX parsing is not implemented yet." },
-      { status: 501 }
-    );
-  } 
+    const tempPath = path.join(process.cwd(), "temp.pptx");
+
+    fs.writeFileSync(tempPath, buffer);
+
+    const text = await parsePptx(tempPath);
+
+    fs.unlinkSync(tempPath); // delete temp file
+
+    return NextResponse.json({
+      text,
+    });
+  }
 
   return NextResponse.json(
     { error: "Unsupported file type." },
@@ -36,8 +56,8 @@ export async function POST(req: Request) {
   );
 
   } catch (error) {
-    console.error("PDF parsing error:", error);
+    console.error("File parsing error:", error);
 
-    return NextResponse.json({ error: "Failed to parse PDF" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to parse file" }, { status: 500 });
   }
 }

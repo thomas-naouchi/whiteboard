@@ -5,7 +5,7 @@ import ChatBar from "./components/ChatBar";
 import ChatHistory, { type ChatMessage } from "./components/ChatHistory";
 import "./chat.css";
 
-//filters text files only (pdf parsing must be handled later)
+
 //transforms text files into one long string
 async function filesToDocumentText(files: File[]) {
   const parts = await Promise.all(
@@ -16,7 +16,8 @@ async function filesToDocumentText(files: File[]) {
       }
 
       // PDF and PPTX files → send to parser API
-      if (file.name.toLowerCase().endsWith(".pdf") || file.name.toLowerCase().endsWith(".pptx")) {
+      if (file.name.toLowerCase().endsWith(".pdf") || file.name.toLowerCase().endsWith(".pptx") ||
+  file.name.toLowerCase().endsWith(".docx")) {
         const formData = new FormData();
         formData.append("file", file);
 
