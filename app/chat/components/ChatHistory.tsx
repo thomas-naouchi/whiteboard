@@ -13,11 +13,13 @@ export interface ChatMessage {
 interface ChatHistoryProps {
   messages: ChatMessage[];
   onClearHistory: () => void;
+  isLoading?: boolean;
 }
 
 export default function ChatHistory({
   messages,
   onClearHistory,
+  isLoading = false,
 }: ChatHistoryProps) {
   const hasMessages = messages.length > 0;
 
@@ -45,7 +47,9 @@ export default function ChatHistory({
 
       {!hasMessages ? (
         <div className="chat-history-empty">
-          No messages yet. Your chat history will appear here.
+          {isLoading
+            ? "Loading history..."
+            : "No messages yet. Your chat history will appear here."}
         </div>
       ) : (
         <div className="chat-history-list">

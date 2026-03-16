@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ChatBar from "./components/ChatBar";
 import ChatHistory, { type ChatMessage } from "./components/ChatHistory";
 import "./chat.css";
@@ -43,15 +43,49 @@ async function filesToDocumentText(files: File[]) {
   return parts.join("\n\n");
 }
 
-//we are inside app/chat/page.tsx so we go up one level and into components
 export default function ChatPage() {
-  //stores all messages sent by the user
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
 
-  const [persistedDocText, setPersistedDocText] = useState(""); //uploaded document text persist along the session
+  const [persistedDocText, setPersistedDocText] = useState("");
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [supabaseWarning, setSupabaseWarning] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
-  //called when ChatBar sends a new message
+  /**
+   * Load previous session history if one exists
+   */
+  useEffect(() => {
+    const stored = window.localStorage.getItem("whiteboard-session-id");
+
+    if (stored) {
+      setSessionId(stored);
+
+      fetch(`/api/session/messages?sessionId=${encodeURIComponent(stored)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data.messages) && data.messages.length > 0) {
+            setMessages(
+              data.messages.map(
+                (m: { id: string; role: string; content: string }) => ({
+                  id: m.id,
+                  role: m.role as "user" | "assistant",
+                  content: m.content,
+                }),
+              ),
+            );
+          }
+        })
+        .catch(() => {})
+        .finally(() => setHistoryLoading(false));
+    } else {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  /**
+   * Send new message
+   */
   async function handleNewMessage(message: string, files: File[]) {
     setIsSending(true);
 
@@ -127,10 +161,16 @@ export default function ChatPage() {
     }
   }
 
-  //clears history
+  /**
+   * Clear chat history and session
+   */
   function handleClearHistory() {
     setMessages([]);
     setPersistedDocText("");
+    setSupabaseWarning(null);
+    setSessionId(null);
+
+    window.localStorage.removeItem("whiteboard-session-id");
   }
 
   return (
@@ -142,8 +182,19 @@ export default function ChatPage() {
         </p>
       </header>
 
+      {supabaseWarning && (
+        <p className="chat-page-supabase-warning" role="alert">
+          Chat saved locally only. Supabase: {supabaseWarning}
+        </p>
+      )}
+
       <ChatBar onSendMessage={handleNewMessage} isSending={isSending} />
-      <ChatHistory messages={messages} onClearHistory={handleClearHistory} />
+
+      <ChatHistory
+        messages={messages}
+        onClearHistory={handleClearHistory}
+        isLoading={historyLoading}
+      />
     </main>
   );
 }
