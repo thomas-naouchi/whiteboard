@@ -5,196 +5,207 @@ import ChatBar from "./components/ChatBar";
 import ChatHistory, { type ChatMessage } from "./components/ChatHistory";
 import "./chat.css";
 
+const SESSION_STORAGE_KEY = "whiteboard-session-id";
 
-//transforms text files into one long string
-async function filesToDocumentText(files: File[]) {
-  const parts = await Promise.all(
-    files.map(async (file) => {
-      // TXT files
-      if (file.name.toLowerCase().endsWith(".txt")) {
-        return `# ${file.name}\n${await file.text()}`;
-      }
+/**
+ * Parse uploaded files into plain text by calling the /api/chat/parse endpoint.
+ * TXT files are read directly in the browser; PDF/DOCX/PPTX are sent to the server.
+ */
+async function filesToDocumentText(files: File[]): Promise<string> {
+    const parts = await Promise.all(
+          files.map(async (file) => {
+                  const lower = file.name.toLowerCase();
 
-      // PDF and PPTX files → send to parser API
-      if (file.name.toLowerCase().endsWith(".pdf") || file.name.toLowerCase().endsWith(".pptx") ||
-  file.name.toLowerCase().endsWith(".docx")) {
-        const formData = new FormData();
-        formData.append("file", file);
+                          // TXT files: read directly in the browser
+                          if (lower.endsWith(".txt")) {
+                                    return `# ${file.name}\n${await file.text()}`;
+                          }
 
-        const res = await fetch("/api/chat/parse", {
-          method: "POST",
-          body: formData,
-        });
+                          // PDF, DOCX, PPTX: send to the server-side parse API
+                          if (
+                                    lower.endsWith(".pdf") ||
+                                    lower.endsWith(".docx") ||
+                                    lower.endsWith(".pptx")
+                                  ) {
+                                    const formData = new FormData();
+                                    formData.append("file", file);
 
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || `Failed to parse ${file.name}`);
-        }
+                    const res = await fetch("/api/chat/parse", {
+                                method: "POST",
+                                body: formData,
+                    });
 
-        const data = await res.json();
+                    if (!res.ok) {
+                                const errData = await res.json().catch(() => ({}));
+                                throw new Error(
+                                              (errData as { error?: string }).error ||
+                                                `Failed to parse ${file.name}`,
+                                            );
+                    }
 
-        return `# ${file.name}\n${data.text}`;
-      }
+                    const data = (await res.json()) as { text: string };
+                                    return `# ${file.name}\n${data.text}`;
+                          }
 
-      return "";
-    }),
-  );
+                          return "";
+          }),
+        );
 
-  return parts.join("\n\n");
+  return parts.filter(Boolean).join("\n\n");
 }
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isSending, setIsSending] = useState(false);
-
-  const [persistedDocText, setPersistedDocText] = useState("");
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [supabaseWarning, setSupabaseWarning] = useState<string | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(true);
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [isSending, setIsSending] = useState(false);
+    const [persistedDocText, setPersistedDocText] = useState("");
+    const [sessionId, setSessionId] = useState<string | null>(null);
+    const [historyLoading, setHistoryLoading] = useState(true);
 
   /**
-   * Load previous session history if one exists
-   */
+     * On mount: restore previous session from localStorage
+     */
   useEffect(() => {
-    const stored = window.localStorage.getItem("whiteboard-session-id");
-
-    if (stored) {
-      setSessionId(stored);
-
-      fetch(`/api/session/messages?sessionId=${encodeURIComponent(stored)}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (Array.isArray(data.messages) && data.messages.length > 0) {
-            setMessages(
-              data.messages.map(
-                (m: { id: string; role: string; content: string }) => ({
-                  id: m.id,
-                  role: m.role as "user" | "assistant",
-                  content: m.content,
-                }),
-              ),
-            );
-          }
-        })
-        .catch(() => {})
-        .finally(() => setHistoryLoading(false));
-    } else {
-      setHistoryLoading(false);
-    }
+        const stored = window.localStorage.getItem(SESSION_STORAGE_KEY);
+        if (stored) {
+                setSessionId(stored);
+                fetch(`/api/session/messages?sessionId=${encodeURIComponent(stored)}`)
+                  .then((res) => res.json())
+                  .then((data: { messages?: Array<{ id: string; role: string; content: string }> }) => {
+                              if (Array.isArray(data.messages) && data.messages.length > 0) {
+                                            setMessages(
+                                                            data.messages.map((m) => ({
+                                                                              id: m.id,
+                                                                              role: m.role as "user" | "assistant",
+                                                                              content: m.content,
+                                                            })),
+                                                          );
+                              }
+                  })
+                  .catch(() => {})
+                  .finally(() => setHistoryLoading(false));
+        } else {
+                setHistoryLoading(false);
+        }
   }, []);
 
   /**
-   * Send new message
-   */
+     * Send a new message to the chat API
+     */
   async function handleNewMessage(message: string, files: File[]) {
-    setIsSending(true);
+        setIsSending(true);
 
-    const history = messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
+      // Snapshot history before optimistic update
+      const history = messages.map((m) => ({ role: m.role, content: m.content }));
 
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        role: "user",
-        content: message,
-        attachments: files.map((file) => ({
-          name: file.name,
-          size: file.size,
-        })),
-      },
-    ]);
+      // Optimistically add user message to UI
+      setMessages((prev) => [
+              ...prev,
+        {
+                  id: crypto.randomUUID(),
+                  role: "user",
+                  content: message,
+                  attachments: files.map((f) => ({ name: f.name, size: f.size })),
+        },
+            ]);
 
-    try {
-      const newDocText = await filesToDocumentText(files);
-      //combines old text files with new files (if found)
-      const combinedDocText = newDocText
-        ? persistedDocText
-          ? `${persistedDocText}\n\n${newDocText}`
-          : newDocText
-        : persistedDocText;
+      try {
+              // Parse uploaded files to text (client-side for TXT, server-side for others)
+          const newDocText = files.length > 0 ? await filesToDocumentText(files) : "";
 
-      // update persisted storage only if new text was uploaded
-      if (newDocText) setPersistedDocText(combinedDocText);
+          // Merge with previously accumulated document text
+          const combinedDocText = newDocText
+                ? persistedDocText
+                      ? `${persistedDocText}\n\n${newDocText}`
+                      : newDocText
+                    : persistedDocText;
 
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          history,
-          documentText: combinedDocText,
-        }),
-      });
+          // Persist new document text for subsequent messages
+          if (newDocText) {
+                    setPersistedDocText(combinedDocText);
+          }
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Request failed: ${res.status}`);
+          // Call the chat API with JSON body
+          const res = await fetch("/api/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                                message,
+                                history,
+                                documentText: combinedDocText,
+                                sessionId,
+                    }),
+          });
+
+          if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(
+                                (errData as { error?: string }).error ||
+                                  `Request failed: ${res.status}`,
+                              );
+          }
+
+          const data = (await res.json()) as {
+                    answer: string;
+                    sessionId?: string;
+          };
+
+          // Store the session ID in localStorage so history survives page reloads
+          if (data.sessionId && data.sessionId !== sessionId) {
+                    setSessionId(data.sessionId);
+                    window.localStorage.setItem(SESSION_STORAGE_KEY, data.sessionId);
+          }
+
+          setMessages((prev) => [
+                    ...prev,
+            {
+                        id: crypto.randomUUID(),
+                        role: "assistant",
+                        content: data.answer ?? "(no answer)",
+            },
+                  ]);
+      } catch (err) {
+              setMessages((prev) => [
+                        ...prev,
+                {
+                            id: crypto.randomUUID(),
+                            role: "assistant",
+                            content:
+                                          err instanceof Error
+                                ? `Error: ${err.message}`
+                                            : "Error: something went wrong.",
+                },
+                      ]);
+      } finally {
+              setIsSending(false);
       }
-
-      const data = await res.json();
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: data.answer ?? "(no answer)",
-        },
-      ]);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content:
-            err instanceof Error
-              ? `Error: ${err.message}`
-              : "Error: something went wrong.",
-        },
-      ]);
-    } finally {
-      setIsSending(false);
-    }
   }
 
   /**
-   * Clear chat history and session
-   */
+     * Clear chat history and session
+     */
   function handleClearHistory() {
-    setMessages([]);
-    setPersistedDocText("");
-    setSupabaseWarning(null);
-    setSessionId(null);
-
-    window.localStorage.removeItem("whiteboard-session-id");
+        setMessages([]);
+        setPersistedDocText("");
+        setSessionId(null);
+        window.localStorage.removeItem(SESSION_STORAGE_KEY);
   }
 
   return (
-    <main className="chat-page">
-      <header className="chat-page-header">
-        <h1 className="chat-page-title">Whiteboard Chat</h1>
-        <p className="chat-page-subtitle">
-          Ask questions and review your recent prompts below.
-        </p>
-      </header>
-
-      {supabaseWarning && (
-        <p className="chat-page-supabase-warning" role="alert">
-          Chat saved locally only. Supabase: {supabaseWarning}
-        </p>
-      )}
-
-      <ChatBar onSendMessage={handleNewMessage} isSending={isSending} />
-
-      <ChatHistory
-        messages={messages}
-        onClearHistory={handleClearHistory}
-        isLoading={historyLoading}
-      />
-    </main>
-  );
-}
+        <main className="chat-page">
+              <header className="chat-page-header">
+                      <h1 className="chat-page-title">Whiteboard Chat</h1>h1>
+                      <p className="chat-page-subtitle">
+                                Ask questions and review your recent prompts below.
+                      </p>p>
+              </header>header>
+        
+              <ChatBar onSendMessage={handleNewMessage} isSending={isSending} />
+        
+              <ChatHistory
+                        messages={messages}
+                        onClearHistory={handleClearHistory}
+                        isLoading={historyLoading}
+                      />
+        </main>main>
+      );
+}</main>
