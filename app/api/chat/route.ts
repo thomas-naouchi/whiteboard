@@ -1,3 +1,15 @@
+/**
+ * Chat API Route
+ *
+ * Responsibilities:
+ * 1. Receive user message + chat history + uploaded files
+ * 2. Extract readable text from supported files
+ * 3. Maintain document context across messages
+ * 4. Apply a CONTEXT WINDOW (limit history + document size)
+ * 5. Send request to the LLM
+ * 6. Persist chat messages and files to Supabase
+ */
+
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import * as officeParser from "officeparser";
@@ -6,14 +18,51 @@ import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
 
+/**
+ * Context window limits
+ *
+ * Prevents the request from exceeding LLM token limits.
+ */
+const MAX_HISTORY_MESSAGES = 6;
+const MAX_DOCUMENT_CHARS = 15000;
+
+/**
+ * Supabase Storage bucket
+ */
+const STORAGE_BUCKET = "whiteboard-files";
+
+/**
+ * Initialize OpenAI client
+ */
 function getClient() {
   const apiKey = process.env.OPENAI_API_KEY;
+
   if (!apiKey) {
     throw new Error("Missing environment variable: OPENAI_API_KEY");
   }
+
   return new OpenAI({ apiKey });
+
+  /**
+   * To test with GROK instead:
+   *
+   * return new OpenAI({
+   *   apiKey,
+   *   baseURL: "https://api.x.ai/v1"
+   * });
+   */
 }
 
+/**
+ * Sanitize file names before storing them
+ */
+function sanitizeStorageFileName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+/**
+ * Extract text from uploaded files
+ */
 async function extractTextFromFile(file: File): Promise<string> {
   const lowerName = file.name.toLowerCase();
 
@@ -36,16 +85,16 @@ async function extractTextFromFile(file: File): Promise<string> {
   throw new Error("Unsupported file type. Allowed: .txt, .pdf, .pptx");
 }
 
-const STORAGE_BUCKET = "whiteboard-files";
-
-function sanitizeStorageFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
+/**
+ * Main API handler
+ */
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
 
+    /**
+     * Extract form fields
+     */
     const rawMessage = formData.get("message");
     const rawHistory = formData.get("history");
     const rawPersistedDoc = formData.get("persistedDocumentText");
@@ -61,10 +110,15 @@ export async function POST(req: Request) {
       );
     }
 
+    /**
+     * Parse chat history
+     */
     let history: Array<{ role: "user" | "assistant"; content: string }> = [];
+
     if (typeof rawHistory === "string" && rawHistory.length > 0) {
       try {
         const parsed = JSON.parse(rawHistory);
+
         if (Array.isArray(parsed)) {
           history = parsed
             .filter(
@@ -79,32 +133,44 @@ export async function POST(req: Request) {
             }));
         }
       } catch {
-        // ignore malformed history
+        // Ignore malformed history
       }
     }
 
+    /**
+     * Retrieve existing document context
+     */
     let combinedDocumentText =
       typeof rawPersistedDoc === "string" ? rawPersistedDoc : "";
 
+    /**
+     * Existing session ID (if provided)
+     */
     let sessionId =
       typeof rawSessionId === "string" && rawSessionId.length > 0
         ? rawSessionId
         : null;
 
+    /**
+     * Handle uploaded files
+     */
     const uploadedFiles = formData
       .getAll("files")
       .filter((v): v is File => v instanceof File);
 
     if (uploadedFiles.length > 0) {
       const parts: string[] = [];
+
       for (const file of uploadedFiles) {
         const text = await extractTextFromFile(file);
+
         if (text.trim()) {
           parts.push(`# ${file.name}\n${text}`);
         }
       }
 
       const newDocText = parts.join("\n\n");
+
       if (newDocText) {
         combinedDocumentText = combinedDocumentText
           ? `${combinedDocumentText}\n\n${newDocText}`
@@ -122,15 +188,50 @@ export async function POST(req: Request) {
       );
     }
 
+    /**
+     * ===============================
+     * CONTEXT WINDOW IMPLEMENTATION
+     * ===============================
+     */
+
+    /**
+     * Trim chat history
+     */
+    const trimmedHistory = history.slice(-MAX_HISTORY_MESSAGES);
+
+    /**
+     * Trim document size
+     */
+    const trimmedDocument =
+      combinedDocumentText.length > MAX_DOCUMENT_CHARS
+        ? combinedDocumentText.slice(-MAX_DOCUMENT_CHARS)
+        : combinedDocumentText;
+
+    /**
+     * System instruction
+     */
     const system =
       'Answer ONLY using the provided document. If not found, reply exactly: "I could not find that in the document." Do not guess.';
 
-    const prompt = `DOCUMENT:\n${combinedDocumentText}\n\nQUESTION:\n${message}`;
+    /**
+     * Build prompt
+     */
+    const prompt = `
+DOCUMENT:
+${trimmedDocument}
 
+QUESTION:
+${message}
+`;
+
+    /**
+     * Initialize LLM
+     */
     const client = getClient();
 
-    // Persist to Supabase if configured
-    let supabaseError: Error | null = null;
+    /**
+     * Persist user message to Supabase
+     */
     try {
       const supabase = getSupabaseServerClient();
 
@@ -143,118 +244,107 @@ export async function POST(req: Request) {
           .select("id")
           .single();
 
-        if (error) {
-          throw error;
+        if (error) throw error;
+
+        if (!data) {
+          throw new Error("Failed to create session");
         }
+
         sessionId = data.id as string;
       }
 
-      const { error: msgError } = await supabase
-        .from("whiteboard_messages")
-        .insert([
-          {
-            session_id: sessionId,
-            role: "user",
-            content: message,
-          },
-        ]);
+      await supabase.from("whiteboard_messages").insert([
+        {
+          session_id: sessionId,
+          role: "user",
+          content: message,
+        },
+      ]);
 
-      if (msgError) {
-        throw msgError;
-      }
-
-      // Store uploaded files in Storage and record in whiteboard_files
+      /**
+       * Store uploaded files in Supabase Storage
+       */
       if (uploadedFiles.length > 0 && sessionId) {
         for (const file of uploadedFiles) {
-          const path = `${sessionId}/${crypto.randomUUID()}-${sanitizeStorageFileName(file.name)}`;
+          const path = `${sessionId}/${crypto.randomUUID()}-${sanitizeStorageFileName(
+            file.name,
+          )}`;
+
           const buffer = Buffer.from(await file.arrayBuffer());
-          const { error: uploadErr } = await supabase.storage
-            .from(STORAGE_BUCKET)
-            .upload(path, buffer, {
-              contentType: file.type || "application/octet-stream",
-              upsert: false,
-            });
-          if (uploadErr) {
-            throw uploadErr;
-          }
-          const { error: fileRowErr } = await supabase
-            .from("whiteboard_files")
-            .insert({
-              session_id: sessionId,
-              file_name: file.name,
-              storage_path: path,
-              content_type: file.type || null,
-              byte_size: file.size,
-            });
-          if (fileRowErr) {
-            throw fileRowErr;
-          }
+
+          await supabase.storage.from(STORAGE_BUCKET).upload(path, buffer, {
+            contentType: file.type || "application/octet-stream",
+          });
         }
       }
     } catch (err) {
-      if (err instanceof Error) {
-        supabaseError = err;
-        console.error("Supabase persistence error:", err);
-      }
+      console.error("Supabase persistence error:", err);
     }
 
+    /**
+     * Send request to LLM
+     */
     const resp = await client.chat.completions.create({
       model: "gpt-4.1-mini",
+
       messages: [
-        { role: "system" as const, content: system },
-        ...history.map((h) => ({
+        { role: "system", content: system },
+
+        ...trimmedHistory.map((h) => ({
           role: h.role,
           content: h.content,
         })),
-        { role: "user" as const, content: prompt },
+
+        { role: "user", content: prompt },
       ],
+
       temperature: 0,
       max_tokens: 500,
     });
 
     const answer = resp.choices?.[0]?.message?.content ?? "";
 
-    // Persist assistant message if Supabase is available and sessionId exists
+    /**
+     * Save assistant response
+     */
     if (sessionId) {
       try {
         const supabase = getSupabaseServerClient();
-        const { error: msgError } = await supabase
-          .from("whiteboard_messages")
-          .insert([
-            {
-              session_id: sessionId,
-              role: "assistant",
-              content: answer,
-            },
-          ]);
-        if (msgError) {
-          throw msgError;
-        }
+
+        await supabase.from("whiteboard_messages").insert([
+          {
+            session_id: sessionId,
+            role: "assistant",
+            content: answer,
+          },
+        ]);
       } catch (err) {
         console.error("Supabase assistant persistence error:", err);
       }
     }
 
+    /**
+     * Return response
+     */
     return NextResponse.json({
-      answer: resp.choices?.[0]?.message?.content ?? "",
+      answer,
       documentText: combinedDocumentText,
       sessionId,
-      supabaseWarning: supabaseError ? supabaseError.message : undefined,
     });
   } catch (e: any) {
     console.error("Error handling /api/chat POST request:", e);
+
     if (e instanceof Error && e.message.includes("OPENAI_API_KEY")) {
       return NextResponse.json(
         { error: "Server is missing OPENAI_API_KEY" },
         { status: 500 },
       );
     }
+
     return NextResponse.json(
       {
         error:
-          e instanceof Error && e.message
-            ? e.message
-            : "Internal server error",
+          e instanceof Error && e.message ? e.message : "Internal server error",
       },
       { status: 500 },
     );
