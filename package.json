@@ -1,36 +1,36 @@
 {
-  "name": "whiteboard",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "@thednp/dommatrix": "^3.0.2",
-    "mammoth": "^1.12.0",
-    "next": "16.1.6",
-    "officeparser": "^6.0.4",
-    "openai": "^6.22.0",
-    "pdf-parse": "^1.1.1",
-    "pdfjs-dist": "^5.5.207",
-    "pptx-text-parser": "^1.1.1",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "react-tsparticles": "^2.12.2",
-    "tsparticles": "^3.9.1",
-    "tsparticles-slim": "^2.12.0"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.1.6",
-    "tailwindcss": "^4",
-    "typescript": "^5"
-  }
+    "name": "whiteboard",
+    "version": "0.1.0",
+    "private": true,
+    "scripts": {
+          "dev": "next dev",
+          "build": "next build",
+          "start": "next start",
+          "lint": "eslint"
+    },
+    "dependencies": {
+          "@supabase/supabase-js": "^2.49.4",
+          "framer-motion": "^11.18.2",
+          "mammoth": "^1.12.0",
+          "next": "15.3.0",
+          "officeparser": "^6.0.4",
+          "openai": "^4.100.0",
+          "pdf-parse": "^1.1.1",
+          "react": "^19.0.0",
+          "react-dom": "^19.0.0",
+          "react-tsparticles": "^2.12.2",
+          "tsparticles-slim": "^2.12.0",
+          "server-only": "^0.0.1"
+    },
+    "devDependencies": {
+          "@tailwindcss/postcss": "^4",
+          "@types/node": "^20",
+          "@types/pdf-parse": "^1.1.4",
+          "@types/react": "^19",
+          "@types/react-dom": "^19",
+          "eslint": "^9",
+          "eslint-config-next": "15.3.0",
+          "tailwindcss": "^4",
+          "typescript": "^5"
+    }
 }
