@@ -193,11 +193,11 @@ export default function ChatPage() {
   return (
         <main className="chat-page">
               <header className="chat-page-header">
-                      <h1 className="chat-page-title">Whiteboard Chat</h1>h1>
+                      <h1 className="chat-page-title">Whiteboard Chat</h1>
                       <p className="chat-page-subtitle">
                                 Ask questions and review your recent prompts below.
-                      </p>p>
-              </header>header>
+                      </p>
+              </header>
         
               <ChatBar onSendMessage={handleNewMessage} isSending={isSending} />
         
@@ -206,6 +206,6 @@ export default function ChatPage() {
                         onClearHistory={handleClearHistory}
                         isLoading={historyLoading}
                       />
-        </main>main>
+        </main>
       );
-}</main>
+}
