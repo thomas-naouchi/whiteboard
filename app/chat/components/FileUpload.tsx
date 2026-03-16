@@ -29,12 +29,9 @@ export default function FileUpload({ onFilesChange }: FileUploadProps) {
 
     for (const file of fileArray) {
       const lower = file.name.toLowerCase();
-      const allowedExtension =
-        lower.endsWith(".pdf") ||
-        lower.endsWith(".txt") ||
-        lower.endsWith(".pptx");
+      const allowedExtension = lower.endsWith(".pdf") || lower.endsWith(".txt") || lower.endsWith(".docx") || lower.endsWith(".pptx");
       if (!allowedExtension) {
-        setError("Only PDF, PPTX, and TXT files are allowed.");
+        setError("Only PDF, TXT, DOCX and PPTX files are allowed.");
         return;
       }
     }
@@ -62,7 +59,7 @@ export default function FileUpload({ onFilesChange }: FileUploadProps) {
         ref={inputRef}
         type="file"
         multiple
-        accept=".pdf,.pptx,.txt"
+        accept=".pdf,.txt,.docx,.pptx"
         onChange={handleChange}
         className="file-upload-input"
       />
