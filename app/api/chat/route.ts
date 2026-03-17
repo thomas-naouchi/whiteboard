@@ -100,6 +100,12 @@ export async function POST(req: Request) {
                 : null;
 
       /**
+           * Uploaded file records to associate with this session
+           */
+      const fileRecords: { fileName: string; storagePath: string; size?: number }[] =
+        Array.isArray(body.uploadedFiles) ? body.uploadedFiles : [];
+
+      /**
            * ===============================
            * CONTEXT WINDOW IMPLEMENTATION
            * ===============================
@@ -166,6 +172,18 @@ export async function POST(req: Request) {
                           content: message,
               },
                     ]);
+
+            // Record uploaded files for this session
+            if (fileRecords.length > 0) {
+              await supabase.from("whiteboard_files").insert(
+                fileRecords.map((f) => ({
+                  session_id: sessionId,
+                  file_name: f.fileName,
+                  storage_path: f.storagePath,
+                  byte_size: f.size ?? 0,
+                })),
+              );
+            }
       } catch (err) {
               console.error("Supabase persistence error:", err);
       }

@@ -1,13 +1,21 @@
 "use client";
 
 import { useRef, useState } from "react";
+import type { UploadedFile } from "../types";
 
 interface FileUploadProps {
-  onFilesChange: (files: File[]) => void;
+  uploadedFiles: UploadedFile[];
+  onAddFiles: (files: File[]) => void;
+  onRemoveFile: (storagePath: string) => void;
+  isUploading?: boolean;
 }
 
-export default function FileUpload({ onFilesChange }: FileUploadProps) {
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+export default function FileUpload({
+  uploadedFiles,
+  onAddFiles,
+  onRemoveFile,
+  isUploading = false,
+}: FileUploadProps) {
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -22,32 +30,29 @@ export default function FileUpload({ onFilesChange }: FileUploadProps) {
       return;
     }
 
-    if (fileArray.length > 5) {
-      setError("You can upload a maximum of 5 files.");
+    const newTotal = uploadedFiles.length + fileArray.length;
+    if (newTotal > 5) {
+      setError(`You can have a maximum of 5 files (currently ${uploadedFiles.length} attached).`);
       return;
     }
 
     for (const file of fileArray) {
       const lower = file.name.toLowerCase();
-      const allowedExtension = lower.endsWith(".pdf") || lower.endsWith(".txt") || lower.endsWith(".docx") || lower.endsWith(".pptx");
-      if (!allowedExtension) {
+      const allowed =
+        lower.endsWith(".pdf") ||
+        lower.endsWith(".txt") ||
+        lower.endsWith(".docx") ||
+        lower.endsWith(".pptx");
+      if (!allowed) {
         setError("Only PDF, TXT, DOCX and PPTX files are allowed.");
         return;
       }
     }
 
     setError(null);
-    setSelectedFiles(fileArray);
-    onFilesChange(fileArray);
-  }
+    onAddFiles(fileArray);
 
-  function removeFile(indexToRemove: number) {
-    const updatedFiles = selectedFiles.filter(
-      (_, index) => index !== indexToRemove,
-    );
-
-    setSelectedFiles(updatedFiles);
-    onFilesChange(updatedFiles);
+    // Reset so the same file can be added again after removal
     if (inputRef.current) {
       inputRef.current.value = "";
     }
@@ -62,21 +67,27 @@ export default function FileUpload({ onFilesChange }: FileUploadProps) {
         accept=".pdf,.txt,.docx,.pptx"
         onChange={handleChange}
         className="file-upload-input"
+        disabled={isUploading}
       />
 
       {error && <p className="file-upload-error">{error}</p>}
 
-      {selectedFiles.length > 0 && (
+      {isUploading && (
+        <p className="file-upload-uploading">Uploading to storage...</p>
+      )}
+
+      {uploadedFiles.length > 0 && (
         <div className="file-upload-list-wrap">
-          <p className="file-upload-list-title">Selected files</p>
+          <p className="file-upload-list-title">Attached files</p>
           <ul className="file-upload-list">
-            {selectedFiles.map((file, index) => (
-              <li key={index} className="file-upload-item">
-                <span className="file-upload-name">{file.name}</span>
+            {uploadedFiles.map((file) => (
+              <li key={file.storagePath} className="file-upload-item">
+                <span className="file-upload-name">{file.fileName}</span>
                 <button
                   type="button"
-                  onClick={() => removeFile(index)}
+                  onClick={() => onRemoveFile(file.storagePath)}
                   className="file-upload-remove"
+                  disabled={isUploading}
                 >
                   Remove
                 </button>
