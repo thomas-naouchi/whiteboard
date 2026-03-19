@@ -1,5 +1,7 @@
 "use client";
 
+import { useCallback, useState } from "react";
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -8,19 +10,34 @@ export interface ChatMessage {
     name: string;
     size: number;
   }>;
+  suggestedFollowUps?: string[];
 }
 
 interface ChatHistoryProps {
   messages: ChatMessage[];
   onClearHistory: () => void;
+  onSuggestionClick?: (text: string) => void;
   isLoading?: boolean;
 }
 
 export default function ChatHistory({
   messages,
   onClearHistory,
+  onSuggestionClick,
   isLoading = false,
 }: ChatHistoryProps) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopy = useCallback(async (msg: ChatMessage) => {
+    try {
+      await navigator.clipboard.writeText(msg.content);
+      setCopiedId(msg.id);
+      window.setTimeout(() => setCopiedId(null), 1400);
+    } catch {
+      setCopiedId(null);
+    }
+  }, []);
+
   const hasMessages = messages.length > 0;
 
   return (
@@ -49,7 +66,7 @@ export default function ChatHistory({
         <div className="chat-history-empty">
           {isLoading
             ? "Loading history..."
-            : "No messages yet. Your chat history will appear here."}
+            : "No messages yet. Upload a file and ask your first question."}
         </div>
       ) : (
         <div className="chat-history-list">
@@ -69,7 +86,19 @@ export default function ChatHistory({
                     : "chat-history-item-assistant"
                 }`}
               >
-                <p>{msg.content}</p>
+                <div className="chat-history-item-content">
+                  <p className="chat-history-message">{msg.content}</p>
+                  {msg.role === "assistant" && (
+                    <button
+                      type="button"
+                      onClick={() => void handleCopy(msg)}
+                      className="chat-history-copy"
+                      title={copiedId === msg.id ? "Copied" : "Copy response"}
+                    >
+                      {copiedId === msg.id ? "Copied" : "Copy"}
+                    </button>
+                  )}
+                </div>
                 {msg.attachments && msg.attachments.length > 0 && (
                   <ul className="chat-history-attachments">
                     {msg.attachments.map((file, index) => (
@@ -79,6 +108,22 @@ export default function ChatHistory({
                     ))}
                   </ul>
                 )}
+                {msg.role === "assistant" &&
+                  msg.suggestedFollowUps &&
+                  msg.suggestedFollowUps.length > 0 && (
+                    <div className="chat-history-suggestions">
+                      {msg.suggestedFollowUps.map((suggestion) => (
+                        <button
+                          key={`${msg.id}-${suggestion}`}
+                          type="button"
+                          onClick={() => onSuggestionClick?.(suggestion)}
+                          className="chat-history-suggestion"
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  )}
               </article>
             </div>
           ))}

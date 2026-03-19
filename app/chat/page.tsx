@@ -5,35 +5,46 @@ import ChatBar from "./components/ChatBar";
 import ChatHistory, { type ChatMessage } from "./components/ChatHistory";
 import "./chat.css";
 
-<<<<<<< HEAD
-//filters text files only (pdf parsing must be handled later)
-//transforms text files into one long string
-async function filesToDocumentText(files: File[]) {
-  const txtFiles = files.filter((f) => f.name.toLowerCase().endsWith(".txt"));
+const SESSION_KEY = "whiteboard-session-id";
+const MAX_CONTEXT_MESSAGES = 12;
+const MAX_CONTEXT_CHARACTERS = 12_000;
 
-  const parts = await Promise.all(
-    txtFiles.map(async (f) => `# ${f.name}\n${await f.text()}`),
-  );
-  return parts.join("\n\n");
+function buildContextWindow(messages: ChatMessage[]) {
+  const selected: Array<{ role: "user" | "assistant"; content: string }> = [];
+  let totalChars = 0;
+
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const msg = messages[i];
+    const nextChars = totalChars + msg.content.length;
+
+    if (selected.length >= MAX_CONTEXT_MESSAGES || nextChars > MAX_CONTEXT_CHARACTERS) {
+      break;
+    }
+
+    selected.unshift({
+      role: msg.role,
+      content: msg.content,
+    });
+    totalChars = nextChars;
+  }
+
+  return selected;
 }
 
-=======
->>>>>>> 9e192858cfe0c790289440b598b24199c1c40e9b
-//we are inside app/chat/page.tsx so we go up one level and into components
 export default function ChatPage() {
-  //stores all messages sent by the user
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
-
-  const [persistedDocText, setPersistedDocText] = useState(""); //uploaded document text persists across the session
+  const [persistedDocText, setPersistedDocText] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [supabaseWarning, setSupabaseWarning] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(true);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("whiteboard-session-id");
+    const stored = window.localStorage.getItem(SESSION_KEY);
+
     if (stored) {
       setSessionId(stored);
+
       fetch(`/api/session/messages?sessionId=${encodeURIComponent(stored)}`)
         .then((res) => res.json())
         .then((data) => {
@@ -43,7 +54,7 @@ export default function ChatPage() {
                 id: m.id,
                 role: m.role as "user" | "assistant",
                 content: m.content,
-              }))
+              })),
             );
           }
         })
@@ -54,14 +65,8 @@ export default function ChatPage() {
     }
   }, []);
 
-  //called when ChatBar sends a new message
   async function handleNewMessage(message: string, files: File[]) {
     setIsSending(true);
-
-    const history = messages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
 
     setMessages((prev) => [
       ...prev,
@@ -77,36 +82,7 @@ export default function ChatPage() {
     ]);
 
     try {
-<<<<<<< HEAD
-      const newDocText = await filesToDocumentText(files);
-      //combines old text files with new files (if found)
-      const combinedDocText = newDocText
-        ? persistedDocText
-          ? `${persistedDocText}\n\n${newDocText}`
-          : newDocText
-        : persistedDocText;
-
-      // update persisted storage only if new text was uploaded
-      if (newDocText) setPersistedDocText(combinedDocText);
-
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          history,
-          documentText: combinedDocText,
-        }),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || `Request failed: ${res.status}`);
-      }
-
-      const data = await res.json();
-
-=======
+      const history = buildContextWindow(messages);
       const formData = new FormData();
       formData.append("message", message);
       formData.append("history", JSON.stringify(history));
@@ -135,21 +111,23 @@ export default function ChatPage() {
       }
       if (typeof data.sessionId === "string" && data.sessionId.length > 0) {
         setSessionId(data.sessionId);
-        window.localStorage.setItem("whiteboard-session-id", data.sessionId);
+        window.localStorage.setItem(SESSION_KEY, data.sessionId);
       }
       if (typeof data.supabaseWarning === "string" && data.supabaseWarning) {
         setSupabaseWarning(data.supabaseWarning);
       } else {
         setSupabaseWarning(null);
       }
-
->>>>>>> 9e192858cfe0c790289440b598b24199c1c40e9b
+ 
       setMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID(),
           role: "assistant",
           content: data.answer ?? "(no answer)",
+          suggestedFollowUps: Array.isArray(data.suggestedFollowUps)
+            ? data.suggestedFollowUps.filter((item: unknown) => typeof item === "string")
+            : [],
         },
       ]);
     } catch (err) {
@@ -169,35 +147,78 @@ export default function ChatPage() {
     }
   }
 
-  //clears history and session so next message starts a new session
+  function handleSuggestionClick(text: string) {
+    void handleNewMessage(text, []);
+  }
+
   function handleClearHistory() {
     setMessages([]);
     setPersistedDocText("");
     setSupabaseWarning(null);
     setSessionId(null);
-    window.localStorage.removeItem("whiteboard-session-id");
+    window.localStorage.removeItem(SESSION_KEY);
   }
 
   return (
-    <main className="chat-page">
-      <header className="chat-page-header">
-        <h1 className="chat-page-title">Whiteboard Chat</h1>
-        <p className="chat-page-subtitle">
-          Ask questions and review your recent prompts below.
-        </p>
-      </header>
+    <main className="chat-shell">
+      <aside className="chat-sidebar">
+        <div className="chat-sidebar-brand">
+          <div className="chat-sidebar-brand-badge">AI Active</div>
+          <h1>Whiteboard</h1>
+          <p>AI File System</p>
+        </div>
 
-      {supabaseWarning && (
-        <p className="chat-page-supabase-warning" role="alert">
-          Chat saved locally only. Supabase: {supabaseWarning}
-        </p>
-      )}
-      <ChatBar onSendMessage={handleNewMessage} isSending={isSending} />
-      <ChatHistory
-        messages={messages}
-        onClearHistory={handleClearHistory}
-        isLoading={historyLoading}
-      />
+        <nav className="chat-sidebar-nav">
+          <a className="chat-sidebar-link" href="/">Home</a>
+          <a className="chat-sidebar-link chat-sidebar-link-active" href="/chat">
+            Chat about files
+          </a>
+        </nav>
+      </aside>
+
+      <section className="chat-main">
+        <header className="chat-main-header">
+          <p className="chat-main-chip">Classified</p>
+          <div>
+            <h2 className="chat-main-title">Chat about files</h2>
+            <p className="chat-main-subtitle">
+              Upload PDF, PPTX, or TXT files and ask grounded questions from your documents.
+            </p>
+          </div>
+        </header>
+
+        {!persistedDocText && (
+          <div className="chat-hint-banner">
+            Upload a file with the + button below, then ask your question.
+          </div>
+        )}
+
+        {persistedDocText && (
+          <div className="chat-status-row">
+            <span className="chat-status-pill">Document context loaded</span>
+          </div>
+        )}
+
+        {supabaseWarning && (
+          <p className="chat-main-warning" role="alert">
+            Chat saved locally only. Supabase warning: {supabaseWarning}
+          </p>
+        )}
+
+        <div className="chat-stage">
+          <ChatHistory
+            messages={messages}
+            onClearHistory={handleClearHistory}
+            onSuggestionClick={handleSuggestionClick}
+            isLoading={historyLoading}
+          />
+          <ChatBar
+            onSendMessage={handleNewMessage}
+            isSending={isSending}
+            hasLoadedDocument={Boolean(persistedDocText)}
+          />
+        </div>
+      </section>
     </main>
   );
 }

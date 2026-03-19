@@ -4,12 +4,20 @@ import { useRef, useState } from "react";
 
 interface FileUploadProps {
   onFilesChange: (files: File[]) => void;
+  onPinFile?: (file: File) => void;
+  selectedFiles?: File[];
 }
 
-export default function FileUpload({ onFilesChange }: FileUploadProps) {
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+export default function FileUpload({
+  onFilesChange,
+  onPinFile,
+  selectedFiles: controlledFiles,
+}: FileUploadProps) {
+  const [internalFiles, setInternalFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const selectedFiles = controlledFiles ?? internalFiles;
 
   function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
     const files = event.target.files;
@@ -39,9 +47,20 @@ export default function FileUpload({ onFilesChange }: FileUploadProps) {
       }
     }
 
+    if (selectedFiles.length + fileArray.length > 5) {
+      setError("You can upload a maximum of 5 files.");
+      return;
+    }
+
+    const merged = [...selectedFiles, ...fileArray];
     setError(null);
-    setSelectedFiles(fileArray);
-    onFilesChange(fileArray);
+    if (controlledFiles === undefined) {
+      setInternalFiles(merged);
+    }
+    onFilesChange(merged);
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
   }
 
   function removeFile(indexToRemove: number) {
@@ -49,11 +68,24 @@ export default function FileUpload({ onFilesChange }: FileUploadProps) {
       (_, index) => index !== indexToRemove,
     );
 
-    setSelectedFiles(updatedFiles);
+    if (controlledFiles === undefined) {
+      setInternalFiles(updatedFiles);
+    }
     onFilesChange(updatedFiles);
     if (inputRef.current) {
       inputRef.current.value = "";
     }
+  }
+
+  function pinFile(file: File) {
+    if (!onPinFile) {
+      return;
+    }
+    const index = selectedFiles.indexOf(file);
+    if (index >= 0) {
+      removeFile(index);
+    }
+    onPinFile(file);
   }
 
   return (
@@ -76,13 +108,25 @@ export default function FileUpload({ onFilesChange }: FileUploadProps) {
             {selectedFiles.map((file, index) => (
               <li key={index} className="file-upload-item">
                 <span className="file-upload-name">{file.name}</span>
-                <button
-                  type="button"
-                  onClick={() => removeFile(index)}
-                  className="file-upload-remove"
-                >
-                  Remove
-                </button>
+                <div className="file-upload-actions">
+                  {onPinFile && (
+                    <button
+                      type="button"
+                      onClick={() => pinFile(file)}
+                      className="file-upload-pin"
+                      title="Pin file across messages"
+                    >
+                      Pin
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeFile(index)}
+                    className="file-upload-remove"
+                  >
+                    Remove
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
