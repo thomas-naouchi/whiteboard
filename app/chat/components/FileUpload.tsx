@@ -6,12 +6,14 @@ interface FileUploadProps {
   onFilesChange: (files: File[]) => void;
   onPinFile?: (file: File) => void;
   selectedFiles?: File[];
+  hideFileList?: boolean;
 }
 
 export default function FileUpload({
   onFilesChange,
   onPinFile,
   selectedFiles: controlledFiles,
+  hideFileList = false,
 }: FileUploadProps) {
   const [internalFiles, setInternalFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -101,7 +103,7 @@ export default function FileUpload({
 
       {error && <p className="file-upload-error">{error}</p>}
 
-      {selectedFiles.length > 0 && (
+      {!hideFileList && selectedFiles.length > 0 && (
         <div className="file-upload-list-wrap">
           <p className="file-upload-list-title">Selected files</p>
           <ul className="file-upload-list">

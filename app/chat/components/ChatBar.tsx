@@ -3,10 +3,17 @@
 import { useState, type KeyboardEvent } from "react";
 import FileUpload from "./FileUpload";
 
+export interface ChatUploadItem {
+  id: string;
+  file: File;
+  isSelected: boolean;
+}
+
 interface ChatBarProps {
   onSendMessage: (message: string, files: File[]) => void | Promise<void>;
   isSending: boolean;
-  hasLoadedDocument?: boolean;
+  uploadedFiles: ChatUploadItem[];
+  onUploadedFilesChange: (files: ChatUploadItem[]) => void;
 }
 
 const MAX_MESSAGE_LENGTH = 500;
@@ -14,24 +21,51 @@ const MAX_MESSAGE_LENGTH = 500;
 export default function ChatBar({
   onSendMessage,
   isSending,
-  hasLoadedDocument = false,
+  uploadedFiles,
+  onUploadedFilesChange,
 }: ChatBarProps) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [pinnedFiles, setPinnedFiles] = useState<File[]>([]);
   const [isFilePopupOpen, setIsFilePopupOpen] = useState(false);
   const [uploaderKey, setUploaderKey] = useState(0);
 
-  const filesForSend = [...pinnedFiles, ...selectedFiles];
+  const filesForSend = uploadedFiles
+    .filter((item) => item.isSelected)
+    .map((item) => item.file);
 
-  function handlePinFile(file: File) {
-    setSelectedFiles((prev) => prev.filter((f) => f !== file));
-    setPinnedFiles((prev) => [...prev, file]);
+  function handleUploadedFilesChange(files: File[]) {
+    const nextFiles = [
+      ...uploadedFiles,
+      ...files
+        .filter(
+          (file) =>
+            !uploadedFiles.some(
+              (existing) =>
+                existing.file.name === file.name &&
+                existing.file.size === file.size &&
+                existing.file.lastModified === file.lastModified,
+            ),
+        )
+        .map((file) => ({
+          id: crypto.randomUUID(),
+          file,
+          isSelected: true,
+        })),
+    ];
+
+    onUploadedFilesChange(nextFiles);
   }
 
-  function handleUnpinFile(file: File) {
-    setPinnedFiles((prev) => prev.filter((f) => f !== file));
+  function handleFileSelectionChange(id: string) {
+    onUploadedFilesChange(
+      uploadedFiles.map((item) =>
+        item.id === id ? { ...item, isSelected: !item.isSelected } : item,
+      ),
+    );
+  }
+
+  function handleRemoveFile(id: string) {
+    onUploadedFilesChange(uploadedFiles.filter((item) => item.id !== id));
   }
 
   async function handleSend() {
@@ -47,15 +81,14 @@ export default function ChatBar({
       return;
     }
 
-    if (!hasLoadedDocument && filesForSend.length === 0) {
-      setError("Attach at least one file before sending your first message.");
+    if (filesForSend.length === 0) {
+      setError("Please select at least one file.");
       return;
     }
 
     setError(null);
     await onSendMessage(trimmed, filesForSend);
     setMessage("");
-    setSelectedFiles([]);
     setIsFilePopupOpen(false);
     setUploaderKey((prev) => prev + 1);
   }
@@ -71,27 +104,52 @@ export default function ChatBar({
 
   return (
     <div className="chat-bar">
-      {pinnedFiles.length > 0 && (
-        <div className="chat-bar-pinned">
-          <p className="chat-bar-pinned-label">Pinned files</p>
-          <div className="chat-bar-pinned-list">
-            {pinnedFiles.map((file, index) => (
-              <span key={`${file.name}-${index}`} className="chat-bar-pinned-item">
-                <span className="chat-bar-pinned-item-name">{file.name}</span>
-                <button
-                  type="button"
-                  onClick={() => handleUnpinFile(file)}
-                  className="chat-bar-pinned-remove"
-                  aria-label={`Unpin ${file.name}`}
-                  title="Unpin file"
-                >
-                  ×
-                </button>
-              </span>
-            ))}
+      <section className="chat-file-container">
+        <div className="chat-file-container-header">
+          <div>
+            <p className="chat-file-container-label">File container</p>
+            <h3 className="chat-file-container-title">Uploaded files</h3>
           </div>
+          <span className="chat-file-container-count">
+            {filesForSend.length}/{uploadedFiles.length} selected
+          </span>
         </div>
-      )}
+
+        {uploadedFiles.length === 0 ? (
+          <div className="chat-file-container-empty">
+            Upload files once, then tick the ones you want to chat about.
+          </div>
+        ) : (
+          <ul className="chat-file-list">
+            {uploadedFiles.map((item) => (
+              <li key={item.id} className="chat-file-list-item">
+                <label className="chat-file-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={item.isSelected}
+                    onChange={() => handleFileSelectionChange(item.id)}
+                    className="chat-file-checkbox"
+                  />
+                  <span className="chat-file-list-name">{item.file.name}</span>
+                </label>
+
+                <div className="chat-file-list-meta">
+                  <span className="chat-file-list-size">
+                    {Math.max(1, Math.round(item.file.size / 1024))} KB
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveFile(item.id)}
+                    className="chat-file-list-remove"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <label htmlFor="chat-message-input" className="chat-bar-label">
         Ask a question
@@ -134,9 +192,14 @@ export default function ChatBar({
         <div className="chat-bar-file-popup">
           <p className="chat-bar-file-popup-title">Attach files</p>
           <p className="chat-bar-file-popup-subtitle">
-            Upload up to 5 files (.pdf, .pptx, or .txt). Pin to keep across messages.
+            Upload up to 5 files (.pdf, .pptx, or .txt). Then tick the files you want to use for the next message.
           </p>
-          <FileUpload key={uploaderKey} onFilesChange={setSelectedFiles} onPinFile={handlePinFile} selectedFiles={selectedFiles} />
+          <FileUpload
+            key={uploaderKey}
+            onFilesChange={handleUploadedFilesChange}
+            selectedFiles={uploadedFiles.map((item) => item.file)}
+            hideFileList
+          />
         </div>
       )}
 
@@ -145,7 +208,7 @@ export default function ChatBar({
           Press Enter to send, Shift+Enter for a new line.
         </p>
         <p>
-          {filesForSend.length} file(s) ready | {message.trim().length}/{MAX_MESSAGE_LENGTH}
+          {filesForSend.length} file(s) selected | {message.trim().length}/{MAX_MESSAGE_LENGTH}
         </p>
       </div>
 
