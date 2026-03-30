@@ -1,8 +1,7 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
-import * as officeParser from "officeparser";
-import pdf from "pdf-parse";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { extractTextFromFile } from "@/lib/file-text";
 
 export const runtime = "nodejs";
 
@@ -14,32 +13,11 @@ function getClient() {
   return new OpenAI({ apiKey });
 }
 
-async function extractTextFromFile(file: File): Promise<string> {
-  const lowerName = file.name.toLowerCase();
-
-  if (lowerName.endsWith(".txt")) {
-    return await file.text();
-  }
-
-  if (lowerName.endsWith(".pdf")) {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const result = await pdf(buffer);
-    return result.text;
-  }
-
-  if (lowerName.endsWith(".pptx")) {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const ast = await officeParser.parseOffice(buffer);
-    return ast.toText();
-  }
-
-  throw new Error("Unsupported file type. Allowed: .txt, .pdf, .pptx");
-}
-
 const STORAGE_BUCKET = "whiteboard-files";
 const MAX_GENERATED_TAGS = 12;
 const MAX_TAG_LENGTH = 32;
 const EXCERPT_LENGTH = 280;
+const SEARCH_TEXT_LIMIT = 24_000;
 
 const STOP_WORDS = new Set([
   "a",
@@ -206,6 +184,12 @@ function buildSummaryExcerpt(extractedText: string) {
   return compact.slice(0, EXCERPT_LENGTH);
 }
 
+function buildSearchText(extractedText: string) {
+  const compact = extractedText.replace(/\s+/g, " ").trim();
+  if (!compact) return null;
+  return compact.slice(0, SEARCH_TEXT_LIMIT);
+}
+
 function sanitizeStorageFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
@@ -221,7 +205,8 @@ function isMissingTagColumnsError(error: unknown) {
     code === "42703" ||
     code === "PGRST204" ||
     text.includes("tags") ||
-    text.includes("summary_excerpt")
+    text.includes("summary_excerpt") ||
+    text.includes("search_text")
   );
 }
 
@@ -283,6 +268,7 @@ export async function POST(req: Request) {
       extractedText: string;
       generatedTags: string[];
       summaryExcerpt: string | null;
+      searchText: string | null;
     }> = [];
 
     if (uploadedFiles.length > 0) {
@@ -294,6 +280,7 @@ export async function POST(req: Request) {
           extractedText: text,
           generatedTags: generateTags(file.name, text),
           summaryExcerpt: buildSummaryExcerpt(text),
+          searchText: buildSearchText(text),
         });
 
         if (text.trim()) {
@@ -363,7 +350,7 @@ export async function POST(req: Request) {
       // Store uploaded files in Storage and record in whiteboard_files
       if (processedUploads.length > 0 && sessionId) {
         for (const item of processedUploads) {
-          const { file, generatedTags, summaryExcerpt } = item;
+          const { file, generatedTags, summaryExcerpt, searchText } = item;
           const path = `${sessionId}/${crypto.randomUUID()}-${sanitizeStorageFileName(file.name)}`;
           const buffer = Buffer.from(await file.arrayBuffer());
           const { error: uploadErr } = await supabase.storage
@@ -385,6 +372,7 @@ export async function POST(req: Request) {
               byte_size: file.size,
               tags: generatedTags,
               summary_excerpt: summaryExcerpt,
+              search_text: searchText,
             });
 
           if (fileRowErr && isMissingTagColumnsError(fileRowErr)) {

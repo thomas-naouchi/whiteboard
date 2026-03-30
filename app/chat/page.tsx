@@ -31,13 +31,57 @@ function buildContextWindow(messages: ChatMessage[]) {
   return selected;
 }
 
+interface RetrievalResult {
+  id: string;
+  fileName: string;
+  fileType: string;
+  confidence: string;
+  matchedText: string;
+  summary: string;
+  pageLabel: string;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function highlightMatch(text: string, query: string) {
+  const trimmed = query.trim();
+
+  if (!trimmed) {
+    return text;
+  }
+
+  const safePattern = escapeRegExp(trimmed).replace(/\s+/g, "\\s+");
+  const regex = new RegExp(`(${safePattern})`, "ig");
+  const parts = text.split(regex);
+
+  return parts.map((part, index) =>
+    regex.test(part) ? (
+      <mark key={`${part}-${index}`} className="retrieval-highlight">
+        {part}
+      </mark>
+    ) : (
+      <span key={`${part}-${index}`}>{part}</span>
+    ),
+  );
+}
+
 export default function ChatPage() {
+  const [activeWorkspace, setActiveWorkspace] = useState<"chat" | "finder">("chat");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [persistedDocText, setPersistedDocText] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [supabaseWarning, setSupabaseWarning] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [retrievalQuery, setRetrievalQuery] = useState("quotation for mark zuckerberg");
+  const [retrievalResults, setRetrievalResults] = useState<RetrievalResult[]>([]);
+  const [activeResultId, setActiveResultId] = useState<string | null>(null);
+  const [isSearchingFiles, setIsSearchingFiles] = useState(false);
+  const [retrievalError, setRetrievalError] = useState<string | null>(null);
+  const [retrievalInfo, setRetrievalInfo] = useState<string | null>(null);
+  const [selectedFinderFileName, setSelectedFinderFileName] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(SESSION_KEY);
@@ -156,7 +200,79 @@ export default function ChatPage() {
     setPersistedDocText("");
     setSupabaseWarning(null);
     setSessionId(null);
+    setRetrievalResults([]);
+    setActiveResultId(null);
+    setRetrievalInfo(null);
+    setRetrievalError(null);
+    setSelectedFinderFileName(null);
     window.localStorage.removeItem(SESSION_KEY);
+  }
+
+  const activeResult =
+    retrievalResults.find((result) => result.id === activeResultId) ?? retrievalResults[0] ?? null;
+
+  async function handleFileSearch() {
+    const trimmedQuery = retrievalQuery.trim();
+
+    if (!trimmedQuery) {
+      setRetrievalError("Please describe the file or text you are trying to find.");
+      setRetrievalInfo(null);
+      return;
+    }
+
+    if (!sessionId) {
+      setRetrievalError("Upload at least one file in chat first so Whiteboard has files to search.");
+      setRetrievalInfo(null);
+      return;
+    }
+
+    setIsSearchingFiles(true);
+    setRetrievalError(null);
+    setRetrievalInfo(null);
+
+    try {
+      const response = await fetch("/api/files/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionId,
+          query: trimmedQuery,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || `Request failed: ${response.status}`);
+      }
+
+      const results = Array.isArray(data.results) ? (data.results as RetrievalResult[]) : [];
+      setRetrievalResults(results);
+      setActiveResultId(results[0]?.id ?? null);
+
+      if (results.length === 0) {
+        setRetrievalInfo("No matching file surfaced yet. Try a client name, quote fragment, document type, or topic.");
+      } else {
+        setRetrievalInfo(`Found ${results.length} possible match${results.length === 1 ? "" : "es"} in this session.`);
+      }
+    } catch (error) {
+      setRetrievalError(
+        error instanceof Error ? error.message : "Unable to search files right now.",
+      );
+      setRetrievalResults([]);
+      setActiveResultId(null);
+      setRetrievalInfo(null);
+    } finally {
+      setIsSearchingFiles(false);
+    }
+  }
+
+  function handleFinderChatTransition() {
+    if (!activeResult) return;
+    setSelectedFinderFileName(activeResult.fileName);
+    setActiveWorkspace("chat");
   }
 
   return (
@@ -170,54 +286,210 @@ export default function ChatPage() {
 
         <nav className="chat-sidebar-nav">
           <a className="chat-sidebar-link" href="/">Home</a>
-          <a className="chat-sidebar-link chat-sidebar-link-active" href="/chat">
+          <button
+            type="button"
+            className={`chat-sidebar-link ${
+              activeWorkspace === "chat" ? "chat-sidebar-link-active" : ""
+            }`}
+            onClick={() => setActiveWorkspace("chat")}
+          >
             Chat about files
-          </a>
+          </button>
+          <button
+            type="button"
+            className={`chat-sidebar-link ${
+              activeWorkspace === "finder" ? "chat-sidebar-link-active" : ""
+            }`}
+            onClick={() => setActiveWorkspace("finder")}
+          >
+            Find a file
+          </button>
         </nav>
       </aside>
 
       <section className="chat-main">
-        <header className="chat-main-header">
-          <p className="chat-main-chip">Classified</p>
-          <div>
-            <h2 className="chat-main-title">Chat about files</h2>
-            <p className="chat-main-subtitle">
-              Upload PDF, PPTX, or TXT files and ask grounded questions from your documents.
+        {activeWorkspace === "chat" ? (
+          <>
+            <header id="chat-workspace" className="chat-main-header">
+              <p className="chat-main-chip">Classified</p>
+              <div>
+                <h2 className="chat-main-title">Chat about files</h2>
+                <p className="chat-main-subtitle">
+                  Upload PDF, PPTX, or TXT files and ask grounded questions from your documents.
+                </p>
+              </div>
+            </header>
+
+            {!persistedDocText && (
+              <div className="chat-hint-banner">
+                Upload a file with the + button below, then ask your question.
+              </div>
+            )}
+
+            {persistedDocText && (
+              <div className="chat-status-row">
+                <span className="chat-status-pill">Document context loaded</span>
+              </div>
+            )}
+
+            {supabaseWarning && (
+              <p className="chat-main-warning" role="alert">
+                Chat saved locally only. Supabase warning: {supabaseWarning}
+              </p>
+            )}
+
+            {selectedFinderFileName && (
+              <div className="chat-finder-bridge">
+                Ready to chat about <strong>{selectedFinderFileName}</strong>. Ask a question and Whiteboard will use the same session file context.
+              </div>
+            )}
+
+            <div className="chat-stage">
+              <ChatHistory
+                messages={messages}
+                onClearHistory={handleClearHistory}
+                onSuggestionClick={handleSuggestionClick}
+                isLoading={historyLoading}
+              />
+              <ChatBar
+                onSendMessage={handleNewMessage}
+                isSending={isSending}
+                hasLoadedDocument={Boolean(persistedDocText)}
+              />
+            </div>
+          </>
+        ) : (
+          <section id="file-finder" className="retrieval-panel">
+            <div className="retrieval-panel-heading">
+              <div>
+                <p className="retrieval-panel-kicker">File Finder</p>
+                <h3 className="retrieval-panel-title">Find the exact file you meant.</h3>
+              </div>
+              <span className="retrieval-panel-badge">Live session search</span>
+            </div>
+
+            <p className="retrieval-panel-copy">
+              Search by what you remember, then review the most likely file with the matching text highlighted in front of you.
             </p>
-          </div>
-        </header>
 
-        {!persistedDocText && (
-          <div className="chat-hint-banner">
-            Upload a file with the + button below, then ask your question.
-          </div>
+            <div className="retrieval-search-row">
+              <label className="retrieval-search-label" htmlFor="retrieval-search-input">
+                I&apos;m looking for
+              </label>
+              <div className="retrieval-search-field">
+                <input
+                  id="retrieval-search-input"
+                  className="retrieval-search-input"
+                  value={retrievalQuery}
+                  onChange={(event) => setRetrievalQuery(event.target.value)}
+                  placeholder="quotation for mark zuckerberg"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleFileSearch();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="retrieval-search-button"
+                  onClick={() => void handleFileSearch()}
+                  disabled={isSearchingFiles}
+                >
+                  {isSearchingFiles ? "Searching..." : "Find file"}
+                </button>
+              </div>
+            </div>
+
+            {retrievalError && (
+              <p className="retrieval-feedback retrieval-feedback-error" role="alert">
+                {retrievalError}
+              </p>
+            )}
+
+            {!retrievalError && retrievalInfo && (
+              <p className="retrieval-feedback retrieval-feedback-info">{retrievalInfo}</p>
+            )}
+
+            <div className="retrieval-layout">
+              <div className="retrieval-results">
+                {retrievalResults.length === 0 ? (
+                  <div className="retrieval-empty-state">
+                    {sessionId
+                      ? "Search this session to surface matching files and highlighted excerpts."
+                      : "No searchable session yet. Upload files in chat first, then come back here."}
+                  </div>
+                ) : retrievalResults.map((result) => {
+                  const isActive = result.id === activeResult?.id;
+
+                  return (
+                    <button
+                      key={result.id}
+                      type="button"
+                      className={`retrieval-result-card ${
+                        isActive ? "retrieval-result-card-active" : ""
+                      }`}
+                      onClick={() => setActiveResultId(result.id)}
+                    >
+                      <div className="retrieval-result-topline">
+                        <span className="retrieval-result-type">{result.fileType}</span>
+                        <span className="retrieval-result-confidence">{result.confidence}</span>
+                      </div>
+                      <h4 className="retrieval-result-name">{result.fileName}</h4>
+                      <p className="retrieval-result-summary">{result.summary}</p>
+                      <span className="retrieval-result-page">{result.pageLabel}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {activeResult ? (
+                <article className="retrieval-preview">
+                  <div className="retrieval-preview-header">
+                    <div>
+                      <p className="retrieval-preview-label">Highlighted match</p>
+                      <h4 className="retrieval-preview-title">{activeResult.fileName}</h4>
+                    </div>
+                    <span className="retrieval-preview-page">{activeResult.pageLabel}</span>
+                  </div>
+
+                  <p className="retrieval-preview-description">
+                    Whiteboard found the strongest stored excerpt for this query so you can validate the file before opening a deeper chat.
+                  </p>
+
+                  <div className="retrieval-preview-excerpt">
+                    {highlightMatch(activeResult.matchedText, retrievalQuery)}
+                  </div>
+
+                  <div className="retrieval-preview-actions">
+                    <button
+                      type="button"
+                      className="retrieval-preview-primary"
+                      onClick={handleFinderChatTransition}
+                    >
+                      Chat about this file
+                    </button>
+                    <button
+                      type="button"
+                      className="retrieval-preview-secondary"
+                      onClick={() => setActiveResultId(activeResult.id)}
+                    >
+                      Keep highlighted
+                    </button>
+                  </div>
+                </article>
+              ) : (
+                <article className="retrieval-preview retrieval-preview-empty">
+                  <p className="retrieval-preview-label">Highlighted match</p>
+                  <h4 className="retrieval-preview-title">No file selected yet</h4>
+                  <p className="retrieval-preview-description">
+                    Search your uploaded session files to see the most likely match and the excerpt that triggered it.
+                  </p>
+                </article>
+              )}
+            </div>
+          </section>
         )}
-
-        {persistedDocText && (
-          <div className="chat-status-row">
-            <span className="chat-status-pill">Document context loaded</span>
-          </div>
-        )}
-
-        {supabaseWarning && (
-          <p className="chat-main-warning" role="alert">
-            Chat saved locally only. Supabase warning: {supabaseWarning}
-          </p>
-        )}
-
-        <div className="chat-stage">
-          <ChatHistory
-            messages={messages}
-            onClearHistory={handleClearHistory}
-            onSuggestionClick={handleSuggestionClick}
-            isLoading={historyLoading}
-          />
-          <ChatBar
-            onSendMessage={handleNewMessage}
-            isSending={isSending}
-            hasLoadedDocument={Boolean(persistedDocText)}
-          />
-        </div>
       </section>
     </main>
   );
