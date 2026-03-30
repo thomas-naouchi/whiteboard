@@ -211,6 +211,8 @@ export default function ChatPage() {
             onClearHistory={handleClearHistory}
             onSuggestionClick={handleSuggestionClick}
             isLoading={historyLoading}
+            isThinking={isSending}
+            thinkingFileCount={0}
           />
           <ChatBar
             onSendMessage={handleNewMessage}

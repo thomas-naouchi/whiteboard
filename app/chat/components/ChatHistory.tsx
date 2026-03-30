@@ -18,6 +18,8 @@ interface ChatHistoryProps {
   onClearHistory: () => void;
   onSuggestionClick?: (text: string) => void;
   isLoading?: boolean;
+  isThinking?: boolean;
+  thinkingFileCount?: number;
 }
 
 export default function ChatHistory({
@@ -25,6 +27,8 @@ export default function ChatHistory({
   onClearHistory,
   onSuggestionClick,
   isLoading = false,
+  isThinking = false,
+  thinkingFileCount = 0,
 }: ChatHistoryProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -127,6 +131,36 @@ export default function ChatHistory({
               </article>
             </div>
           ))}
+
+          {isThinking && (
+            <div className="chat-history-row chat-history-row-assistant">
+              <article className="chat-history-item chat-history-item-assistant chat-history-item-thinking">
+                <div className="chat-history-thinking-topline">
+                  <span className="chat-history-thinking-badge">Whiteboard</span>
+                  <span className="chat-history-thinking-caption">
+                    {thinkingFileCount > 0
+                      ? `Reading ${thinkingFileCount} selected file${thinkingFileCount === 1 ? "" : "s"}`
+                      : "Reviewing the selected file context"}
+                  </span>
+                </div>
+
+                <div className="chat-history-thinking-visual" aria-hidden="true">
+                  <span className="chat-history-thinking-sheet chat-history-thinking-sheet-1" />
+                  <span className="chat-history-thinking-sheet chat-history-thinking-sheet-2" />
+                  <span className="chat-history-thinking-sheet chat-history-thinking-sheet-3" />
+                </div>
+
+                <div className="chat-history-thinking-copy">
+                  <p>Understanding your files</p>
+                  <div className="chat-history-thinking-dots" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                </div>
+              </article>
+            </div>
+          )}
         </div>
       )}
     </section>
