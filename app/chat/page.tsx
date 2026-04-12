@@ -39,6 +39,8 @@ interface RetrievalResult {
   fileName: string;
   fileType: string;
   confidence: string;
+  matchType: string;
+  matchReason: string;
   matchedText: string;
   summary: string;
   pageLabel: string;
@@ -587,18 +589,21 @@ export default function ChatPage() {
                           <span className="retrieval-result-type">
                             {result.fileType}
                           </span>
-                          <span className="retrieval-result-confidence">
-                            {result.confidence}
-                          </span>
-                        </div>
-                        <h4 className="retrieval-result-name">
-                          {result.fileName}
-                        </h4>
-                        <p className="retrieval-result-summary">
-                          {result.summary}
-                        </p>
-                        <span className="retrieval-result-page">
-                          {result.pageLabel}
+                        <span className="retrieval-result-confidence">
+                          {result.confidence}
+                        </span>
+                      </div>
+                      <h4 className="retrieval-result-name">
+                        {result.fileName}
+                      </h4>
+                      <p className="retrieval-result-match-type">
+                        {result.matchType}
+                      </p>
+                      <p className="retrieval-result-summary">
+                        {result.summary}
+                      </p>
+                      <span className="retrieval-result-page">
+                        {result.pageLabel}
                         </span>
                       </button>
                     );
@@ -623,9 +628,17 @@ export default function ChatPage() {
                   </div>
 
                   <p className="retrieval-preview-description">
-                    Whiteboard found the strongest stored excerpt for this query
-                    so you can validate the file before opening a deeper chat.
+                    {activeResult.matchReason}
                   </p>
+
+                  <div className="retrieval-preview-match-meta">
+                    <span className="retrieval-preview-match-type">
+                      {activeResult.matchType}
+                    </span>
+                    <span className="retrieval-preview-match-confidence">
+                      {activeResult.confidence}
+                    </span>
+                  </div>
 
                   <div className="retrieval-preview-excerpt">
                     {highlightMatch(activeResult.matchedText, retrievalQuery)}
@@ -661,6 +674,7 @@ export default function ChatPage() {
                 </article>
               )}
             </div>
+
           </section>
         )}
       </section>

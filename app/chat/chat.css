@@ -377,6 +377,13 @@
   line-height: 1.55;
 }
 
+.retrieval-result-match-type {
+  color: rgb(245 245 240 / 0.58);
+  font-size: 0.74rem;
+  font-weight: 600;
+  margin: 0.38rem 0 0;
+}
+
 .retrieval-result-summary {
   margin: 0.45rem 0 0;
 }
@@ -409,6 +416,24 @@
 
 .retrieval-preview-description {
   margin: 0.8rem 0 0;
+}
+
+.retrieval-preview-match-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.8rem;
+}
+
+.retrieval-preview-match-type,
+.retrieval-preview-match-confidence {
+  background: rgb(255 255 255 / 0.05);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 999px;
+  color: rgb(245 245 240 / 0.8);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.24rem 0.5rem;
 }
 
 .retrieval-preview-excerpt {

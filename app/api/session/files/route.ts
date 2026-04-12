@@ -6,6 +6,11 @@ import {
   isMissingMetadataColumnsError,
   sanitizeStorageFileName,
 } from "@/lib/file-metadata";
+import {
+  buildSemanticChunks,
+  createEmbeddings,
+  isMissingChunksTableError,
+} from "@/lib/file-semantic";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { extractTextFromFile } from "@/lib/file-text";
 
@@ -179,6 +184,32 @@ export async function POST(req: Request) {
 
       if (insertResult.error) {
         throw insertResult.error;
+      }
+
+      try {
+        const semanticChunks = buildSemanticChunks(extractedText);
+        if (semanticChunks.length > 0) {
+          const embeddings = await createEmbeddings(semanticChunks);
+          const chunkRows = semanticChunks.map((chunkText, index) => ({
+            file_id: insertResult.data.id,
+            session_id: sessionId,
+            chunk_index: index,
+            chunk_text: chunkText,
+            embedding: embeddings[index],
+          }));
+
+          const { error: chunkInsertError } = await supabase
+            .from("whiteboard_file_chunks")
+            .insert(chunkRows);
+
+          if (chunkInsertError && !isMissingChunksTableError(chunkInsertError)) {
+            throw chunkInsertError;
+          }
+        }
+      } catch (chunkError) {
+        if (!isMissingChunksTableError(chunkError)) {
+          console.error("Semantic chunk persistence error:", chunkError);
+        }
       }
 
       savedFiles.push({

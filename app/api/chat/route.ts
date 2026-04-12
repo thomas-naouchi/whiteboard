@@ -7,6 +7,11 @@ import {
   isMissingMetadataColumnsError,
   sanitizeStorageFileName,
 } from "@/lib/file-metadata";
+import {
+  buildSemanticChunks,
+  createEmbeddings,
+  isMissingChunksTableError,
+} from "@/lib/file-semantic";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import { extractTextFromFile } from "@/lib/file-text";
 
@@ -241,7 +246,7 @@ export async function POST(req: Request) {
           if (uploadErr) {
             throw uploadErr;
           }
-          const { error: fileRowErr } = await supabase
+          let fileRowResult = await supabase
             .from("whiteboard_files")
             .insert({
               session_id: sessionId,
@@ -252,10 +257,15 @@ export async function POST(req: Request) {
               tags: generatedTags,
               summary_excerpt: summaryExcerpt,
               search_text: searchText,
-            });
+            })
+            .select("id")
+            .single();
 
-          if (fileRowErr && isMissingMetadataColumnsError(fileRowErr)) {
-            const { error: fallbackErr } = await supabase
+          if (
+            fileRowResult.error &&
+            isMissingMetadataColumnsError(fileRowResult.error)
+          ) {
+            fileRowResult = await supabase
               .from("whiteboard_files")
               .insert({
                 session_id: sessionId,
@@ -263,15 +273,42 @@ export async function POST(req: Request) {
                 storage_path: path,
                 content_type: file.type || null,
                 byte_size: file.size,
-              });
-            if (fallbackErr) {
-              throw fallbackErr;
-            }
-            continue;
+              })
+              .select("id")
+              .single();
           }
 
-          if (fileRowErr) {
-            throw fileRowErr;
+          if (fileRowResult.error) {
+            throw fileRowResult.error;
+          }
+
+          try {
+            const semanticChunks = buildSemanticChunks(item.extractedText);
+            if (semanticChunks.length > 0) {
+              const embeddings = await createEmbeddings(semanticChunks);
+              const chunkRows = semanticChunks.map((chunkText, index) => ({
+                file_id: fileRowResult.data.id,
+                session_id: sessionId,
+                chunk_index: index,
+                chunk_text: chunkText,
+                embedding: embeddings[index],
+              }));
+
+              const { error: chunkInsertError } = await supabase
+                .from("whiteboard_file_chunks")
+                .insert(chunkRows);
+
+              if (
+                chunkInsertError &&
+                !isMissingChunksTableError(chunkInsertError)
+              ) {
+                throw chunkInsertError;
+              }
+            }
+          } catch (chunkError) {
+            if (!isMissingChunksTableError(chunkError)) {
+              console.error("Semantic chunk persistence error:", chunkError);
+            }
           }
         }
       }

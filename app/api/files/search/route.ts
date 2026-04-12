@@ -1,11 +1,47 @@
 import { NextResponse } from "next/server";
 import { extractTextFromBuffer } from "@/lib/file-text";
+import {
+  cosineSimilarity,
+  createEmbeddings,
+  isMissingChunksTableError,
+  toNumericEmbedding,
+} from "@/lib/file-semantic";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 const MAX_RESULTS = 6;
 const EXCERPT_RADIUS = 120;
 const STORAGE_BUCKET = "whiteboard-files";
 const SEARCH_TEXT_LIMIT = 24_000;
+const SEMANTIC_SIMILARITY_THRESHOLD = 0.2;
+const SEMANTIC_SCORE_MULTIPLIER = 90;
+const HIGH_SEMANTIC_SIMILARITY_THRESHOLD = 0.42;
+const SEARCH_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "are",
+  "about",
+  "at",
+  "by",
+  "for",
+  "from",
+  "how",
+  "i",
+  "in",
+  "is",
+  "it",
+  "me",
+  "my",
+  "of",
+  "on",
+  "or",
+  "that",
+  "the",
+  "this",
+  "to",
+  "want",
+  "with",
+]);
 
 type WhiteboardFileRow = {
   id: string;
@@ -17,6 +53,12 @@ type WhiteboardFileRow = {
   created_at?: string | null;
 };
 
+type WhiteboardChunkRow = {
+  file_id: string;
+  chunk_text: string;
+  embedding: unknown;
+};
+
 function normalizeWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -26,7 +68,9 @@ function splitQuery(query: string) {
     .toLowerCase()
     .split(" ")
     .map((part) => part.trim())
-    .filter((part) => part.length >= 2);
+    .filter(
+      (part) => part.length >= 2 && !SEARCH_STOP_WORDS.has(part),
+    );
 }
 
 function scoreRow(
@@ -110,6 +154,88 @@ function confidenceLabel(score: number) {
   return "Related";
 }
 
+function getMatchedLiteralTokens(
+  row: WhiteboardFileRow,
+  queryTokens: string[],
+) {
+  const fileName = row.file_name.toLowerCase();
+  const summary = (row.summary_excerpt ?? "").toLowerCase();
+  const searchText = (row.search_text ?? "").toLowerCase();
+  const tags = (row.tags ?? []).map((tag) => tag.toLowerCase());
+
+  return queryTokens.filter(
+    (token) =>
+      fileName.includes(token) ||
+      summary.includes(token) ||
+      searchText.includes(token) ||
+      tags.some((tag) => tag.includes(token)),
+  );
+}
+
+function classifyMatch(params: {
+  row: WhiteboardFileRow;
+  query: string;
+  queryTokens: string[];
+  lexicalScore: number;
+  semanticScore: number;
+  semanticSimilarity: number;
+}) {
+  const { row, query, queryTokens, lexicalScore, semanticScore, semanticSimilarity } =
+    params;
+  const normalizedQuery = query.toLowerCase();
+  const fileName = row.file_name.toLowerCase();
+  const summary = (row.summary_excerpt ?? "").toLowerCase();
+  const searchText = (row.search_text ?? "").toLowerCase();
+  const matchedTokens = getMatchedLiteralTokens(row, queryTokens);
+
+  if (
+    fileName.includes(normalizedQuery) ||
+    summary.includes(normalizedQuery) ||
+    searchText.includes(normalizedQuery)
+  ) {
+    return {
+      matchType: "Exact text match",
+      matchReason: `This file contains the exact phrase "${query}".`,
+      confidence: "Strong match",
+    };
+  }
+
+  if (matchedTokens.length >= 2 || lexicalScore >= 24) {
+    return {
+      matchType: "Keyword match",
+      matchReason: `Matched on keywords: ${matchedTokens.join(", ")}.`,
+      confidence: confidenceLabel(lexicalScore + semanticScore),
+    };
+  }
+
+  if (semanticScore > lexicalScore && semanticSimilarity >= HIGH_SEMANTIC_SIMILARITY_THRESHOLD) {
+    return {
+      matchType: "Semantic match",
+      matchReason:
+        "This file did not contain the exact phrase, but its content is semantically close to your query.",
+      confidence: "Possible match",
+    };
+  }
+
+  if (semanticScore > 0) {
+    return {
+      matchType: "Related by meaning",
+      matchReason:
+        "This file is only loosely related by meaning and may not directly answer the request.",
+      confidence: "Related",
+    };
+  }
+
+  return {
+    matchType: "Related",
+    matchReason:
+      matchedTokens.length > 0
+        ? `Matched weakly on: ${matchedTokens.join(", ")}.`
+        : "This file has a weak content overlap with the query.",
+    confidence: confidenceLabel(lexicalScore + semanticScore),
+  };
+}
+
 function isMissingMetadataColumnError(error: unknown) {
   if (!error || typeof error !== "object") return false;
 
@@ -133,6 +259,82 @@ function getErrorMessage(error: unknown) {
     if (typeof message === "string" && message.trim()) return message;
   }
   return "Failed to search files";
+}
+
+async function getSemanticMatches(
+  supabase: ReturnType<typeof getSupabaseServerClient>,
+  sessionId: string,
+  query: string,
+) {
+  try {
+    const { data, error } = await supabase
+      .from("whiteboard_file_chunks")
+      .select("file_id, chunk_text, embedding")
+      .eq("session_id", sessionId);
+
+    if (error) {
+      if (isMissingChunksTableError(error)) {
+        return new Map<
+          string,
+          { similarity: number; chunkText: string | null }
+        >();
+      }
+
+      throw error;
+    }
+
+    const chunks = (data ?? []) as WhiteboardChunkRow[];
+    if (chunks.length === 0) {
+      return new Map<string, { similarity: number; chunkText: string | null }>();
+    }
+
+    const [queryEmbedding] = await createEmbeddings([query]);
+    const bestByFile = new Map<
+      string,
+      { similarity: number; chunkText: string | null }
+    >();
+
+    for (const chunk of chunks) {
+      const embedding = toNumericEmbedding(chunk.embedding);
+      if (!embedding) {
+        continue;
+      }
+
+      const similarity = cosineSimilarity(queryEmbedding, embedding);
+      const current = bestByFile.get(chunk.file_id);
+
+      if (!current || similarity > current.similarity) {
+        bestByFile.set(chunk.file_id, {
+          similarity,
+          chunkText: chunk.chunk_text,
+        });
+      }
+    }
+
+    return bestByFile;
+  } catch (error) {
+    if (!isMissingChunksTableError(error)) {
+      console.error("Semantic search fallback error:", error);
+    }
+
+    return new Map<string, { similarity: number; chunkText: string | null }>();
+  }
+}
+
+function buildSemanticExcerpt(chunkText: string | null, query: string, queryTokens: string[]) {
+  if (!chunkText) {
+    return "No semantic preview available for this file yet.";
+  }
+
+  return buildExcerpt(
+    {
+      id: "semantic",
+      file_name: "semantic",
+      search_text: chunkText,
+    },
+    query,
+    queryTokens,
+  );
 }
 
 async function hydrateSearchText(
@@ -240,6 +442,7 @@ export async function POST(req: Request) {
 
     const rows = (data ?? []) as WhiteboardFileRow[];
     const queryTokens = splitQuery(query);
+    const semanticMatches = await getSemanticMatches(supabase, sessionId, query);
     const hydratedRows = await Promise.all(
       rows.map(async (row) => ({
         ...row,
@@ -247,22 +450,60 @@ export async function POST(req: Request) {
       })),
     );
 
-    const results = hydratedRows
-      .map((row) => {
-        const score = scoreRow(row, query, queryTokens);
-        return {
-          id: row.id,
-          fileName: row.file_name,
-          fileType: inferFileType(row.file_name),
-          confidence: confidenceLabel(score),
-          matchedText: buildExcerpt(row, query, queryTokens),
-          summary:
-            row.summary_excerpt ??
-            "Stored in this session and available to search.",
-          pageLabel: row.search_text ? "Stored excerpt" : "Stored summary",
+    const scoredRows = hydratedRows.map((row) => {
+      const lexicalScore = scoreRow(row, query, queryTokens);
+      const semanticMatch = semanticMatches.get(row.id);
+      const semanticSimilarity = semanticMatch?.similarity ?? 0;
+      const semanticScore =
+        semanticSimilarity >= SEMANTIC_SIMILARITY_THRESHOLD
+          ? Math.round(semanticSimilarity * SEMANTIC_SCORE_MULTIPLIER)
+          : 0;
+
+      return {
+        row,
+        lexicalScore,
+        semanticScore,
+        semanticSimilarity,
+        semanticChunkText: semanticMatch?.chunkText ?? null,
+        score: lexicalScore + semanticScore,
+      };
+    });
+
+    const results = scoredRows
+      .map(
+        ({
+          row,
+          lexicalScore,
+          semanticScore,
+          semanticChunkText,
+          semanticSimilarity,
           score,
-        };
-      })
+        }) => ({
+        ...classifyMatch({
+          row,
+          query,
+          queryTokens,
+          lexicalScore,
+          semanticScore,
+          semanticSimilarity,
+        }),
+        id: row.id,
+        fileName: row.file_name,
+        fileType: inferFileType(row.file_name),
+        matchedText:
+          lexicalScore > 0
+            ? buildExcerpt(row, query, queryTokens)
+            : buildSemanticExcerpt(semanticChunkText, query, queryTokens),
+        summary:
+          row.summary_excerpt ?? "Stored in this session and available to search.",
+        pageLabel: semanticScore > lexicalScore && semanticSimilarity >= HIGH_SEMANTIC_SIMILARITY_THRESHOLD
+          ? "Semantic excerpt"
+          : row.search_text
+            ? "Stored excerpt"
+            : "Stored summary",
+        score,
+      }),
+      )
       .filter((row) => row.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, MAX_RESULTS)
