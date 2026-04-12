@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import {
   buildSortingPlan,
+  resolveSortingIntent,
   SORTABLE_FILE_LIMIT,
   type SortScope,
   type SortableFileRecord,
 } from "@/lib/file-sorting";
+import { isMissingMetadataColumnsError } from "@/lib/file-metadata";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 type WhiteboardFileRow = {
@@ -40,19 +42,38 @@ async function fetchSessionFiles(params: {
   selectedFileIds: string[];
 }) {
   const supabase = getSupabaseServerClient();
-  let query = supabase
-    .from("whiteboard_files")
-    .select(
-      "id, file_name, storage_path, content_type, byte_size, created_at, tags, summary_excerpt, search_text",
-    )
-    .eq("session_id", params.sessionId)
-    .order("created_at", { ascending: false });
+  const applyScope = <T extends { in: Function }>(query: T) =>
+    params.scope === "selected"
+      ? (query.in("id", params.selectedFileIds) as T)
+      : query;
 
-  if (params.scope === "selected") {
-    query = query.in("id", params.selectedFileIds);
+  let { data, error } = await applyScope(
+    supabase
+      .from("whiteboard_files")
+      .select(
+        "id, file_name, storage_path, content_type, byte_size, created_at, tags, summary_excerpt, search_text",
+      )
+      .eq("session_id", params.sessionId)
+      .order("created_at", { ascending: false }),
+  );
+
+  if (error && isMissingMetadataColumnsError(error)) {
+    const fallbackResult = await applyScope(
+      supabase
+        .from("whiteboard_files")
+        .select("id, file_name, storage_path, content_type, byte_size, created_at")
+        .eq("session_id", params.sessionId)
+        .order("created_at", { ascending: false }),
+    );
+
+    data = (fallbackResult.data ?? []).map((row) => ({
+      ...row,
+      tags: null,
+      summary_excerpt: null,
+      search_text: null,
+    })) as WhiteboardFileRow[];
+    error = fallbackResult.error;
   }
-
-  const { data, error } = await query;
 
   if (error) {
     throw error;
@@ -130,10 +151,12 @@ export async function POST(req: Request) {
       );
     }
 
+    const resolvedIntent = await resolveSortingIntent(instruction);
     const plan = buildSortingPlan({
       files,
       scope,
       instruction,
+      resolvedIntent,
     });
 
     return NextResponse.json({

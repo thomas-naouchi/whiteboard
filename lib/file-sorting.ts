@@ -1,4 +1,7 @@
+import OpenAI from "openai";
+
 export const SORTABLE_FILE_LIMIT = 20;
+const SORTING_INTENT_MODEL = process.env.OPENAI_SORTING_MODEL ?? "gpt-4.1-mini";
 
 const GENERIC_TAGS = new Set([
   "pdf",
@@ -18,6 +21,99 @@ const GENERIC_TAGS = new Set([
   "summary",
   "notes",
 ]);
+
+const STRUCTURAL_TOPIC_NOISE = new Set([
+  "week",
+  "intro",
+  "introduction",
+  "lesson",
+  "unit",
+  "module",
+  "part",
+  "draft",
+  "final",
+  "copy",
+  "version",
+  "lecture",
+]);
+
+const KNOWN_CONCEPT_FAMILIES: Record<string, string[]> = {
+  "deep learning": [
+    "deep learning",
+    "machine learning",
+    "neural network",
+    "neural networks",
+    "language model",
+    "language models",
+    "nlp",
+    "natural language processing",
+    "n-gram",
+    "ngrams",
+    "tokens",
+    "transformer",
+  ],
+  "machine learning": [
+    "machine learning",
+    "deep learning",
+    "neural network",
+    "neural networks",
+    "language model",
+    "language models",
+    "nlp",
+    "n-gram",
+    "tokens",
+  ],
+  "language models": [
+    "language model",
+    "language models",
+    "n-gram",
+    "tokens",
+    "nlp",
+    "deep learning",
+    "machine learning",
+  ],
+  "cvs / resumes": [
+    "cv",
+    "cvs",
+    "resume",
+    "resumes",
+    "curriculum vitae",
+    "experience",
+    "education",
+    "skills",
+    "intern",
+  ],
+  "cvs": [
+    "cv",
+    "cvs",
+    "resume",
+    "resumes",
+    "curriculum vitae",
+  ],
+  "resume": [
+    "cv",
+    "resume",
+    "resumes",
+    "curriculum vitae",
+  ],
+  "presentations": [
+    "presentation",
+    "presentations",
+    "slides",
+    "deck",
+    "powerpoint",
+  ],
+  "coursework": [
+    "assignment",
+    "course",
+    "coursework",
+    "lecture",
+    "chapter",
+    "university",
+    "quiz",
+    "student",
+  ],
+};
 
 const STOP_WORDS = new Set([
   "a",
@@ -133,6 +229,52 @@ export interface SortingPlan {
   views: SortingView[];
 }
 
+interface IntentRule {
+  folder: string;
+  badge: string;
+  rationale: string;
+  reason: string;
+  isFallback?: boolean;
+  match: (file: SortableFileRecord) => boolean;
+}
+
+interface ParsedIntentBucket {
+  folder: string;
+  concepts: string[];
+  fileClass:
+    | "resume"
+    | "presentation"
+    | "coursework"
+    | "generic"
+    | "fallback";
+  isolate: boolean;
+}
+
+interface ResolvedSortingIntent {
+  source: "llm" | "heuristic" | "none";
+  buckets: ParsedIntentBucket[];
+}
+
+interface BucketProfile {
+  folder: string;
+  badge: string;
+  rationale: string;
+  reasonPrefix: string;
+  fileClass: ParsedIntentBucket["fileClass"];
+  familyTerms: string[];
+  isFallback: boolean;
+}
+
+function getOpenAIClient() {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    return null;
+  }
+
+  return new OpenAI({ apiKey });
+}
+
 function bytesLabel(size: number) {
   if (size >= 1024 * 1024) {
     return `${(size / (1024 * 1024)).toFixed(1)} MB`;
@@ -229,8 +371,24 @@ function tokenize(value: string) {
     .map((part) => part.trim())
     .filter(
       (part) =>
-        part.length >= 3 && !STOP_WORDS.has(part) && !GENERIC_TAGS.has(part),
+        part.length >= 3 &&
+        !STOP_WORDS.has(part) &&
+        !GENERIC_TAGS.has(part) &&
+        !STRUCTURAL_TOPIC_NOISE.has(part),
     );
+}
+
+function phraseTokens(value: string) {
+  const tokens = tokenize(value);
+  const phrases: string[] = [];
+
+  for (let index = 0; index < tokens.length - 1; index += 1) {
+    const current = tokens[index];
+    const next = tokens[index + 1];
+    phrases.push(`${current} ${next}`);
+  }
+
+  return phrases;
 }
 
 function titleCase(value: string) {
@@ -242,9 +400,14 @@ function contentCandidates(file: SortableFileRecord) {
   const tagList = file.tags.map((tag) => normalizeToken(tag)).filter(Boolean);
 
   tagList.forEach((tag, index) => {
-    if (!GENERIC_TAGS.has(tag)) {
+    if (!GENERIC_TAGS.has(tag) && !STRUCTURAL_TOPIC_NOISE.has(tag)) {
       score.set(tag, (score.get(tag) ?? 0) + Math.max(3, 10 - index));
     }
+  });
+
+  const summaryPhrases = phraseTokens(file.summaryExcerpt ?? "").slice(0, 6);
+  summaryPhrases.forEach((phrase, index) => {
+    score.set(phrase, (score.get(phrase) ?? 0) + Math.max(4, 9 - index));
   });
 
   const summaryTokens = tokenize(file.summaryExcerpt ?? "").slice(0, 8);
@@ -252,36 +415,611 @@ function contentCandidates(file: SortableFileRecord) {
     score.set(token, (score.get(token) ?? 0) + Math.max(1, 4 - index));
   });
 
+  const namePhrases = phraseTokens(file.fileName.replace(/\.[^.]+$/, "")).slice(0, 4);
+  namePhrases.forEach((phrase, index) => {
+    score.set(phrase, (score.get(phrase) ?? 0) + Math.max(2, 5 - index));
+  });
+
   const nameTokens = tokenize(file.fileName.replace(/\.[^.]+$/, ""));
   nameTokens.forEach((token, index) => {
-    score.set(token, (score.get(token) ?? 0) + Math.max(2, 6 - index));
+    score.set(token, (score.get(token) ?? 0) + Math.max(1, 3 - index));
   });
 
   return Array.from(score.entries()).sort((a, b) => b[1] - a[1]);
 }
 
+function combinedText(file: SortableFileRecord) {
+  return normalizeToken(
+    [
+      file.fileName,
+      file.summaryExcerpt ?? "",
+      file.searchText ?? "",
+      file.tags.join(" "),
+    ].join(" "),
+  );
+}
+
+function hasAny(text: string, terms: string[]) {
+  return terms.some((term) => text.includes(term));
+}
+
+function uniqueTerms(values: string[]) {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function familyMapTerms(term: string) {
+  const normalized = normalizeToken(term);
+  const matches = Object.entries(KNOWN_CONCEPT_FAMILIES)
+    .filter(
+      ([key]) =>
+        normalized === key ||
+        normalized.includes(key) ||
+        key.includes(normalized),
+    )
+    .flatMap(([, aliases]) => aliases);
+
+  return uniqueTerms(matches.map((value) => normalizeToken(value)));
+}
+
+function lexicalVariants(term: string) {
+  const normalized = normalizeToken(term);
+
+  if (!normalized) {
+    return [];
+  }
+
+  const variants = [normalized];
+
+  if (!normalized.endsWith("s")) {
+    variants.push(`${normalized}s`);
+  }
+
+  if (normalized.endsWith("s")) {
+    variants.push(normalized.slice(0, -1));
+  }
+
+  return uniqueTerms(variants);
+}
+
+function isResumeLike(file: SortableFileRecord) {
+  const text = combinedText(file);
+  return hasAny(text, [
+    "cv",
+    "resume",
+    "curriculum vitae",
+    "intern",
+    "experience",
+    "education",
+    "skills",
+    "linkedin",
+  ]);
+}
+
+function isPresentationLike(file: SortableFileRecord) {
+  const extension = extensionOf(file.fileName);
+  const text = combinedText(file);
+  return extension === "pptx" || hasAny(text, ["presentation", "slides", "deck"]);
+}
+
+function isCourseworkLike(file: SortableFileRecord) {
+  const text = combinedText(file);
+  return hasAny(text, [
+    "assignment",
+    "course",
+    "chapter",
+    "lecture",
+    "university",
+    "student",
+    "homework",
+    "quiz",
+  ]);
+}
+
+function fileMatchesBucketClass(
+  file: SortableFileRecord,
+  fileClass: ParsedIntentBucket["fileClass"],
+) {
+  if (fileClass === "resume") return isResumeLike(file);
+  if (fileClass === "presentation") return isPresentationLike(file);
+  if (fileClass === "coursework") return isCourseworkLike(file);
+  if (fileClass === "fallback") return true;
+  return false;
+}
+
+function conceptAliases(concept: string) {
+  const aliases = [concept, ...familyMapTerms(concept), ...lexicalVariants(concept)];
+
+  if (concept.includes("deep learning")) {
+    aliases.push("machine learning", "neural network", "neural networks");
+  }
+
+  if (concept.includes("machine learning")) {
+    aliases.push("deep learning", "neural network", "neural networks");
+  }
+
+  if (concept.includes("language model")) {
+    aliases.push("language models", "llm", "llms", "transformer");
+  }
+
+  return uniqueTerms(aliases.map((value) => normalizeToken(value)));
+}
+
+function extractFreeformConcepts(intent: string) {
+  const normalized = normalizeToken(intent);
+
+  return normalized
+    .split(",")
+    .flatMap((segment) => segment.split(" and "))
+    .map((clause) =>
+      clause
+        .replace(/\b(sort|group|keep|put|make|place|isolate|separate)\b/g, " ")
+        .replace(/\b(files|file|related|alone|together|rest|other|others)\b/g, " ")
+        .replace(/\s+/g, " ")
+        .trim(),
+    )
+    .filter((clause) => clause.length >= 4)
+    .filter(
+      (clause) =>
+        !hasAny(clause, [
+          "cv",
+          "cvs",
+          "resume",
+          "resumes",
+          "presentation",
+          "presentations",
+          "slides",
+          "deck",
+          "course",
+          "coursework",
+          "study",
+          "university",
+          "assignment",
+        ]),
+    );
+}
+
+function normalizeBucket(bucket: ParsedIntentBucket): ParsedIntentBucket {
+  const folder = bucket.folder.trim() || "Requested group";
+  const concepts = uniqueTerms(
+    bucket.concepts
+      .map((concept) => normalizeToken(concept))
+      .filter((concept) => concept.length >= 2),
+  );
+
+  return {
+    folder,
+    concepts,
+    fileClass: bucket.fileClass,
+    isolate: Boolean(bucket.isolate),
+  };
+}
+
+async function resolveSortingIntentWithLLM(intent: string) {
+  const client = getOpenAIClient();
+
+  if (!client || !intent.trim()) {
+    return null;
+  }
+
+  const response = await client.chat.completions.create({
+    model: SORTING_INTENT_MODEL,
+    temperature: 0.1,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content:
+          "You convert a file-sorting request into a small JSON plan. Return only valid JSON. Extract explicit buckets the user wants, keeping labels short and practical. Use fileClass only when the user clearly refers to a known class: resume, presentation, coursework, generic, fallback. Use concepts for topical intent terms like deep learning or cybersecurity. If the user asks for 'the rest' or remaining files separately, include one fallback bucket.",
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          request: intent,
+          output_schema: {
+            buckets: [
+              {
+                folder: "string",
+                concepts: ["string"],
+                fileClass:
+                  "resume | presentation | coursework | generic | fallback",
+                isolate: true,
+              },
+            ],
+          },
+          examples: [
+            {
+              request: "cv's alone, deep learning alone, and the rest",
+              buckets: [
+                {
+                  folder: "CVs / Resumes",
+                  concepts: [],
+                  fileClass: "resume",
+                  isolate: true,
+                },
+                {
+                  folder: "Deep Learning",
+                  concepts: ["deep learning", "machine learning"],
+                  fileClass: "generic",
+                  isolate: true,
+                },
+                {
+                  folder: "Everything else",
+                  concepts: [],
+                  fileClass: "fallback",
+                  isolate: true,
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    ],
+  });
+
+  const content = response.choices[0]?.message?.content;
+
+  if (!content) {
+    return null;
+  }
+
+  const parsed = JSON.parse(content) as {
+    buckets?: Array<{
+      folder?: unknown;
+      concepts?: unknown;
+      fileClass?: unknown;
+      isolate?: unknown;
+    }>;
+  };
+
+  if (!Array.isArray(parsed.buckets)) {
+    return null;
+  }
+
+  return parsed.buckets
+    .map((bucket) => {
+      const fileClass =
+        bucket.fileClass === "resume" ||
+        bucket.fileClass === "presentation" ||
+        bucket.fileClass === "coursework" ||
+        bucket.fileClass === "generic" ||
+        bucket.fileClass === "fallback"
+          ? bucket.fileClass
+          : "generic";
+
+      return normalizeBucket({
+        folder: typeof bucket.folder === "string" ? bucket.folder : "Requested group",
+        concepts: Array.isArray(bucket.concepts)
+          ? bucket.concepts.filter(
+              (concept): concept is string => typeof concept === "string",
+            )
+          : [],
+        fileClass,
+        isolate: Boolean(bucket.isolate),
+      });
+    })
+    .filter((bucket) => bucket.folder.length > 0);
+}
+
+function fileMatchesConcept(file: SortableFileRecord, concept: string) {
+  const text = combinedText(file);
+  const aliases = conceptAliases(concept);
+
+  if (aliases.some((alias) => text.includes(alias))) {
+    return true;
+  }
+
+  const conceptTokens = tokenize(concept);
+  if (conceptTokens.length === 0) {
+    return false;
+  }
+
+  const matchedCount = conceptTokens.filter((token) => text.includes(token)).length;
+  return matchedCount >= Math.min(2, conceptTokens.length);
+}
+
+function scoreFileAgainstConcept(file: SortableFileRecord, concept: string) {
+  const text = combinedText(file);
+  const aliases = conceptAliases(concept);
+  let score = 0;
+
+  for (const alias of aliases) {
+    if (!alias) continue;
+
+    if (text.includes(alias)) {
+      score += alias.includes(" ") ? 16 : 8;
+    } else {
+      const aliasTokens = tokenize(alias);
+      const matchedTokens = aliasTokens.filter((token) => text.includes(token)).length;
+      if (matchedTokens >= 2) {
+        score += matchedTokens * 3;
+      }
+    }
+  }
+
+  return score;
+}
+
+function buildHeuristicBuckets(intent: string) {
+  const normalizedIntent = normalizeToken(intent);
+
+  if (!normalizedIntent) {
+    return [] as ParsedIntentBucket[];
+  }
+
+  const buckets: ParsedIntentBucket[] = [];
+  const wantsSeparation =
+    hasAny(normalizedIntent, ["alone", "separate", "apart", "isolated"]) ||
+    normalizedIntent.includes("rest");
+
+  if (hasAny(normalizedIntent, ["cv", "cvs", "resume", "resumes"])) {
+    buckets.push(
+      normalizeBucket({
+        folder: "CVs / Resumes",
+        concepts: [],
+        fileClass: "resume",
+        isolate: true,
+      }),
+    );
+  }
+
+  if (hasAny(normalizedIntent, ["presentation", "presentations", "slides", "deck"])) {
+    buckets.push(
+      normalizeBucket({
+        folder: "Presentations",
+        concepts: [],
+        fileClass: "presentation",
+        isolate: true,
+      }),
+    );
+  }
+
+  if (hasAny(normalizedIntent, ["course", "coursework", "study", "university", "assignment"])) {
+    buckets.push(
+      normalizeBucket({
+        folder: "Coursework",
+        concepts: [],
+        fileClass: "coursework",
+        isolate: true,
+      }),
+    );
+  }
+
+  for (const concept of extractFreeformConcepts(intent)) {
+    buckets.push(
+      normalizeBucket({
+        folder: titleCase(concept),
+        concepts: [concept],
+        fileClass: "generic",
+        isolate: true,
+      }),
+    );
+  }
+
+  if (wantsSeparation && buckets.length > 0) {
+    buckets.push(
+      normalizeBucket({
+        folder: "Everything else",
+        concepts: [],
+        fileClass: "fallback",
+        isolate: true,
+      }),
+    );
+  }
+
+  return buckets;
+}
+
+export async function resolveSortingIntent(intent: string): Promise<ResolvedSortingIntent> {
+  const trimmed = intent.trim();
+
+  if (!trimmed) {
+    return {
+      source: "none",
+      buckets: [],
+    };
+  }
+
+  try {
+    const llmBuckets = await resolveSortingIntentWithLLM(trimmed);
+
+    if (llmBuckets && llmBuckets.length > 0) {
+      return {
+        source: "llm",
+        buckets: llmBuckets,
+      };
+    }
+  } catch (error) {
+    console.error("Sorting intent LLM parse failed:", error);
+  }
+
+  return {
+    source: "heuristic",
+    buckets: buildHeuristicBuckets(trimmed),
+  };
+}
+
+function buildIntentRules(intent: string, resolvedIntent?: ResolvedSortingIntent) {
+  const buckets = resolvedIntent?.buckets ?? buildHeuristicBuckets(intent);
+  const sourceLabel =
+    resolvedIntent?.source === "llm"
+      ? "LLM-parsed sorting instruction"
+      : `Structured from your instruction: "${intent.trim()}".`;
+
+  return buckets.map((bucket): BucketProfile => {
+    if (bucket.fileClass === "fallback") {
+      return {
+        folder: bucket.folder,
+        badge: "Fallback",
+        rationale: "The instruction asked Whiteboard to keep the remaining files separate.",
+        reasonPrefix: "Grouped here because it did not match any of the requested intent groups.",
+        fileClass: bucket.fileClass,
+        familyTerms: [],
+        isFallback: true,
+      };
+    }
+
+    const seeds = uniqueTerms([
+      bucket.folder,
+      ...bucket.concepts,
+      ...familyMapTerms(bucket.folder),
+      ...bucket.concepts.flatMap((concept) => familyMapTerms(concept)),
+    ].map((value) => normalizeToken(value)));
+
+    return {
+      folder: bucket.folder,
+      badge: resolvedIntent?.source === "llm" ? "LLM intent" : "Intent rule",
+      rationale: sourceLabel,
+      reasonPrefix:
+        bucket.fileClass === "resume"
+          ? "Grouped here because the sorter detected this file as a CV or resume."
+          : bucket.fileClass === "presentation"
+            ? "Grouped here because the sorter detected slide-deck style content."
+            : bucket.fileClass === "coursework"
+              ? "Grouped here because the sorter detected academic or coursework signals."
+              : seeds.length > 0
+                ? `Grouped here because the sorter matched the requested concept family around "${seeds[0]}".`
+                : `Grouped here because it matched the requested bucket "${bucket.folder}".`,
+      fileClass: bucket.fileClass,
+      familyTerms: seeds,
+      isFallback: false,
+    };
+  });
+}
+
+function collectSessionEvidence(
+  files: SortableFileRecord[],
+  profile: BucketProfile,
+) {
+  if (profile.isFallback) {
+    return [];
+  }
+
+  const evidence = new Set<string>();
+
+  for (const file of files) {
+    const classMatch =
+      profile.fileClass !== "generic" &&
+      fileMatchesBucketClass(file, profile.fileClass);
+    const conceptMatch = profile.familyTerms.some((term) =>
+      scoreFileAgainstConcept(file, term) >= 12,
+    );
+
+    if (!classMatch && !conceptMatch) {
+      continue;
+    }
+
+    for (const [candidate, score] of contentCandidates(file).slice(0, 8)) {
+      if (score >= 4) {
+        evidence.add(candidate);
+      }
+    }
+  }
+
+  return Array.from(evidence);
+}
+
+function buildBucketProfiles(
+  files: SortableFileRecord[],
+  intent: string,
+  resolvedIntent?: ResolvedSortingIntent,
+) {
+  const baseProfiles = buildIntentRules(intent, resolvedIntent);
+
+  return baseProfiles.map((profile) => {
+    if (profile.isFallback) {
+      return profile;
+    }
+
+    return {
+      ...profile,
+      familyTerms: uniqueTerms([
+        ...profile.familyTerms,
+        ...collectSessionEvidence(files, profile),
+      ]),
+    };
+  });
+}
+
+function bestIntentCandidate(intent: string, candidates: Array<[string, number]>) {
+  const normalizedIntent = normalizeToken(intent);
+  const intentPhrases = phraseTokens(normalizedIntent);
+  const intentTerms = [...intentPhrases, ...tokenize(normalizedIntent)];
+
+  for (const term of intentTerms) {
+    const exact = candidates.find(([candidate]) => candidate === term);
+    if (exact) {
+      return exact[0];
+    }
+  }
+
+  for (const term of intentTerms) {
+    const overlap = candidates.find(([candidate]) =>
+      candidate.includes(term) || term.includes(candidate),
+    );
+
+    if (overlap) {
+      return overlap[0];
+    }
+  }
+
+  return null;
+}
+
 function pickContentFolder(
   file: SortableFileRecord,
   intent: string,
+  profiles: BucketProfile[],
 ) {
-  const candidates = contentCandidates(file);
-  const intentTokens = tokenize(intent);
+  const primaryProfiles = profiles.filter((profile) => !profile.isFallback);
+  const fallbackProfile = profiles.find((profile) => profile.isFallback);
+  let bestProfile: BucketProfile | null = null;
+  let bestScore = 0;
 
-  if (intentTokens.length > 0) {
-    for (const [candidate] of candidates) {
-      if (
-        intentTokens.some(
-          (token) => candidate.includes(token) || token.includes(candidate),
-        )
-      ) {
-        return {
-          folder: titleCase(candidate),
-          rationale: `Biased toward your sorting instruction: "${intent.trim()}".`,
-          badge: "Instruction fit",
-          reason: `Grouped here because "${candidate}" overlaps with the sorting goal.`,
-        };
-      }
+  for (const profile of primaryProfiles) {
+    let score = 0;
+
+    if (profile.fileClass !== "generic" && fileMatchesBucketClass(file, profile.fileClass)) {
+      score += 24;
     }
+
+    for (const term of profile.familyTerms) {
+      score += scoreFileAgainstConcept(file, term);
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestProfile = profile;
+    }
+  }
+
+  if (bestProfile && bestScore >= 12) {
+    return {
+      folder: bestProfile.folder,
+      rationale: bestProfile.rationale,
+      badge: bestProfile.badge,
+      reason: `${bestProfile.reasonPrefix} Score ${bestScore}.`,
+    };
+  }
+
+  if (fallbackProfile) {
+    return {
+      folder: fallbackProfile.folder,
+      rationale: fallbackProfile.rationale,
+      badge: fallbackProfile.badge,
+      reason: fallbackProfile.reasonPrefix,
+    };
+  }
+
+  const candidates = contentCandidates(file);
+  const chosenIntentCandidate = bestIntentCandidate(intent, candidates);
+
+  if (chosenIntentCandidate) {
+    return {
+      folder: titleCase(chosenIntentCandidate),
+      rationale: `Biased toward your sorting instruction: "${intent.trim()}".`,
+      badge: "Instruction fit",
+      reason: `Grouped here because "${chosenIntentCandidate}" is the strongest semantic overlap with the sorting goal.`,
+    };
   }
 
   const [best] = candidates;
@@ -362,11 +1100,17 @@ export function buildSortingPlan(params: {
   files: SortableFileRecord[];
   scope: SortScope;
   instruction?: string | null;
+  resolvedIntent?: ResolvedSortingIntent;
 }) {
   const instruction = params.instruction?.trim() ?? "";
   const typeFolders = new Map<string, SortingViewFolder>();
   const dateFolders = new Map<string, SortingViewFolder>();
   const contentFolders = new Map<string, SortingViewFolder>();
+  const bucketProfiles = buildBucketProfiles(
+    params.files,
+    instruction,
+    params.resolvedIntent,
+  );
 
   for (const file of params.files) {
     const typeGrouping = fileTypeFolder(file);
@@ -393,7 +1137,11 @@ export function buildSortingPlan(params: {
       ),
     );
 
-    const contentGrouping = pickContentFolder(file, instruction);
+    const contentGrouping = pickContentFolder(
+      file,
+      instruction,
+      bucketProfiles,
+    );
     insertIntoFolders(
       contentFolders,
       contentGrouping.folder,
@@ -429,7 +1177,9 @@ export function buildSortingPlan(params: {
         label: "Inferred topical grouping",
         detail:
           instruction.length > 0
-            ? "Used tags, summaries, and your instruction to bias content folders."
+            ? params.resolvedIntent?.source === "llm"
+              ? "Used an LLM to extract sorting buckets, then matched files deterministically."
+              : "Used tags, summaries, and your instruction to bias content folders."
             : "Used tags and summaries to infer primary content folders.",
       },
       {
