@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import ChatBar from "./components/ChatBar";
+import ChatBar, { type ChatUploadItem } from "./components/ChatBar";
 import ChatHistory, { type ChatMessage } from "./components/ChatHistory";
 import "./chat.css";
 
@@ -38,6 +38,7 @@ export default function ChatPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [supabaseWarning, setSupabaseWarning] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [uploadedFiles, setUploadedFiles] = useState<ChatUploadItem[]>([]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem(SESSION_KEY);
@@ -86,7 +87,7 @@ export default function ChatPage() {
       const formData = new FormData();
       formData.append("message", message);
       formData.append("history", JSON.stringify(history));
-      formData.append("persistedDocumentText", persistedDocText);
+      formData.append("persistedDocumentText", "");
       if (sessionId) {
         formData.append("sessionId", sessionId);
       }
@@ -156,6 +157,7 @@ export default function ChatPage() {
     setPersistedDocText("");
     setSupabaseWarning(null);
     setSessionId(null);
+    setUploadedFiles([]);
     window.localStorage.removeItem(SESSION_KEY);
   }
 
@@ -189,13 +191,15 @@ export default function ChatPage() {
 
         {!persistedDocText && (
           <div className="chat-hint-banner">
-            Upload a file with the + button below, then ask your question.
+            Upload files, tick the ones you want to use, then ask your question.
           </div>
         )}
 
         {persistedDocText && (
           <div className="chat-status-row">
-            <span className="chat-status-pill">Document context loaded</span>
+            <span className="chat-status-pill">
+              Active file context ready for the next question
+            </span>
           </div>
         )}
 
@@ -215,7 +219,8 @@ export default function ChatPage() {
           <ChatBar
             onSendMessage={handleNewMessage}
             isSending={isSending}
-            hasLoadedDocument={Boolean(persistedDocText)}
+            uploadedFiles={uploadedFiles}
+            onUploadedFilesChange={setUploadedFiles}
           />
         </div>
       </section>
