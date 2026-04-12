@@ -52,13 +52,18 @@
 }
 
 .chat-sidebar-link {
+  background: transparent;
   border: 1px solid transparent;
   border-radius: 0.8rem;
   color: rgb(245 245 240 / 0.68);
+  cursor: pointer;
+  display: block;
   font-size: 0.9rem;
   padding: 0.7rem 0.85rem;
+  text-align: left;
   text-decoration: none;
   transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+  width: 100%;
 }
 
 .chat-sidebar-link:hover {
@@ -152,6 +157,281 @@
   font-size: 0.8rem;
   margin: 0;
   padding: 0.65rem 0.8rem;
+}
+
+.chat-finder-bridge {
+  background: rgb(255 255 255 / 0.05);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 0.8rem;
+  color: rgb(245 245 240 / 0.82);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  padding: 0.72rem 0.85rem;
+}
+
+.retrieval-panel {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.05), rgb(255 255 255 / 0.025));
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 1.2rem;
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.2);
+  padding: 1rem;
+}
+
+.retrieval-panel-heading {
+  align-items: center;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.retrieval-panel-kicker,
+.retrieval-preview-label,
+.retrieval-search-label,
+.retrieval-result-type {
+  color: rgb(245 245 240 / 0.56);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.retrieval-panel-title {
+  font-size: 1.2rem;
+  margin: 0.2rem 0 0;
+}
+
+.retrieval-panel-badge {
+  background: rgb(255 255 255 / 0.08);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 999px;
+  color: #f5f5f0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.28rem 0.56rem;
+}
+
+.retrieval-panel-copy {
+  color: rgb(245 245 240 / 0.72);
+  font-size: 0.86rem;
+  line-height: 1.55;
+  margin: 0.8rem 0 0;
+  max-width: 64ch;
+}
+
+.retrieval-search-row {
+  margin-top: 1rem;
+}
+
+.retrieval-search-field {
+  align-items: center;
+  display: flex;
+  gap: 0.7rem;
+  margin-top: 0.45rem;
+}
+
+.retrieval-search-input {
+  background: rgb(255 255 255 / 0.03);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 0.85rem;
+  color: #f5f5f0;
+  flex: 1;
+  font-family: inherit;
+  font-size: 0.92rem;
+  min-height: 48px;
+  outline: none;
+  padding: 0 0.85rem;
+}
+
+.retrieval-search-input::placeholder {
+  color: rgb(245 245 240 / 0.38);
+}
+
+.retrieval-search-input:focus {
+  border-color: rgb(255 255 255 / 0.22);
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 0.08);
+}
+
+.retrieval-search-button,
+.retrieval-preview-primary,
+.retrieval-preview-secondary {
+  border-radius: 0.78rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  min-height: 46px;
+  padding: 0 1rem;
+}
+
+.retrieval-search-button,
+.retrieval-preview-primary {
+  background: linear-gradient(135deg, #f4f1ea, #d7d1c6);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  color: #090909;
+}
+
+.retrieval-preview-secondary {
+  background: transparent;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  color: rgb(245 245 240 / 0.82);
+}
+
+.retrieval-search-button:disabled,
+.retrieval-preview-primary:disabled,
+.retrieval-preview-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.retrieval-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  margin-top: 1rem;
+}
+
+.retrieval-results {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.retrieval-feedback {
+  border-radius: 0.8rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  margin: 0.85rem 0 0;
+  padding: 0.7rem 0.8rem;
+}
+
+.retrieval-feedback-error {
+  background: rgb(80 22 30 / 0.26);
+  border: 1px solid rgb(244 165 172 / 0.34);
+  color: rgb(255 224 228);
+}
+
+.retrieval-feedback-info {
+  background: rgb(255 255 255 / 0.04);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  color: rgb(245 245 240 / 0.76);
+}
+
+.retrieval-empty-state {
+  align-items: center;
+  background: rgb(255 255 255 / 0.025);
+  border: 1px dashed rgb(255 255 255 / 0.12);
+  border-radius: 0.95rem;
+  color: rgb(245 245 240 / 0.56);
+  display: flex;
+  min-height: 220px;
+  padding: 1rem;
+  text-align: center;
+}
+
+.retrieval-result-card {
+  background: rgb(255 255 255 / 0.03);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 0.95rem;
+  color: inherit;
+  cursor: pointer;
+  padding: 0.9rem;
+  text-align: left;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.retrieval-result-card:hover {
+  background: rgb(255 255 255 / 0.05);
+  border-color: rgb(255 255 255 / 0.18);
+  transform: translateY(-1px);
+}
+
+.retrieval-result-card-active {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.04));
+  border-color: rgb(255 255 255 / 0.24);
+  box-shadow: 0 18px 36px rgb(0 0 0 / 0.18);
+}
+
+.retrieval-result-topline {
+  align-items: center;
+  display: flex;
+  gap: 0.65rem;
+  justify-content: space-between;
+}
+
+.retrieval-result-confidence,
+.retrieval-result-page,
+.retrieval-preview-page {
+  color: rgb(245 245 240 / 0.58);
+  font-size: 0.72rem;
+}
+
+.retrieval-result-name,
+.retrieval-preview-title {
+  font-size: 1rem;
+  margin: 0.55rem 0 0;
+}
+
+.retrieval-result-summary,
+.retrieval-preview-description {
+  color: rgb(245 245 240 / 0.72);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.retrieval-result-summary {
+  margin: 0.45rem 0 0;
+}
+
+.retrieval-result-page {
+  display: inline-block;
+  margin-top: 0.55rem;
+}
+
+.retrieval-preview {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.06), rgb(255 255 255 / 0.03));
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 1rem;
+  padding: 1rem;
+}
+
+.retrieval-preview-empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 220px;
+}
+
+.retrieval-preview-header {
+  align-items: center;
+  display: flex;
+  gap: 0.8rem;
+  justify-content: space-between;
+}
+
+.retrieval-preview-description {
+  margin: 0.8rem 0 0;
+}
+
+.retrieval-preview-excerpt {
+  background: rgb(255 255 255 / 0.03);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 0.9rem;
+  color: rgb(245 245 240 / 0.9);
+  line-height: 1.75;
+  margin-top: 1rem;
+  padding: 1rem;
+}
+
+.retrieval-highlight {
+  background: rgb(244 241 234 / 0.92);
+  border-radius: 0.28rem;
+  color: #090909;
+  padding: 0.05rem 0.16rem;
+}
+
+.retrieval-preview-actions {
+  display: flex;
+  gap: 0.65rem;
+  margin-top: 1rem;
 }
 
 .chat-stage {
@@ -849,6 +1129,10 @@
     flex-direction: column;
   }
 
+  .retrieval-layout {
+    grid-template-columns: 1fr;
+  }
+
   .chat-sidebar {
     border-bottom: 1px solid rgb(255 255 255 / 0.1);
     border-right: 0;
@@ -868,6 +1152,20 @@
   .chat-main-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .retrieval-panel-heading,
+  .retrieval-preview-header,
+  .retrieval-search-field,
+  .retrieval-preview-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .retrieval-search-button,
+  .retrieval-preview-primary,
+  .retrieval-preview-secondary {
+    width: 100%;
   }
 
   .chat-history-item-thinking {

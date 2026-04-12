@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS public.whiteboard_files (
   byte_size bigint,
   tags text[] NOT NULL DEFAULT '{}',
   summary_excerpt text,
+  search_text text,
   created_at timestamptz DEFAULT now()
 );
 
@@ -19,6 +20,9 @@ ALTER TABLE public.whiteboard_files
 ALTER TABLE public.whiteboard_files
   ADD COLUMN IF NOT EXISTS summary_excerpt text;
 
+ALTER TABLE public.whiteboard_files
+  ADD COLUMN IF NOT EXISTS search_text text;
+
 -- 1c. Optional index to speed up tag-based lookup:
 CREATE INDEX IF NOT EXISTS whiteboard_files_tags_gin
   ON public.whiteboard_files USING gin (tags);
@@ -28,7 +32,7 @@ CREATE INDEX IF NOT EXISTS whiteboard_files_tags_gin
 --    No SQL needed for the bucket; create it in the Storage UI.
 
 -- 3. Example lookup query:
--- SELECT id, file_name, tags, summary_excerpt, created_at
+-- SELECT id, file_name, tags, summary_excerpt, search_text, created_at
 -- FROM public.whiteboard_files
 -- WHERE tags && ARRAY['biology', 'mitochondria']
 -- ORDER BY created_at DESC;
