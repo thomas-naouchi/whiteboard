@@ -5,12 +5,16 @@ import FileUpload from "./FileUpload";
 
 export interface ChatUploadItem {
   id: string;
-  file: File;
+  file?: File;
+  fileName: string;
+  size: number;
   isSelected: boolean;
+  isPersisted?: boolean;
 }
 
 interface ChatBarProps {
-  onSendMessage: (message: string, files: File[]) => void | Promise<void>;
+  onSendMessage: (message: string, files: ChatUploadItem[]) => void | Promise<void>;
+  onUploadFiles: (files: File[]) => void | Promise<void>;
   isSending: boolean;
   uploadedFiles: ChatUploadItem[];
   onUploadedFilesChange: (files: ChatUploadItem[]) => void;
@@ -20,6 +24,7 @@ const MAX_MESSAGE_LENGTH = 500;
 
 export default function ChatBar({
   onSendMessage,
+  onUploadFiles,
   isSending,
   uploadedFiles,
   onUploadedFilesChange,
@@ -29,31 +34,10 @@ export default function ChatBar({
   const [isFilePopupOpen, setIsFilePopupOpen] = useState(false);
   const [uploaderKey, setUploaderKey] = useState(0);
 
-  const filesForSend = uploadedFiles
-    .filter((item) => item.isSelected)
-    .map((item) => item.file);
+  const selectedItems = uploadedFiles.filter((item) => item.isSelected);
 
-  function handleUploadedFilesChange(files: File[]) {
-    const nextFiles = [
-      ...uploadedFiles,
-      ...files
-        .filter(
-          (file) =>
-            !uploadedFiles.some(
-              (existing) =>
-                existing.file.name === file.name &&
-                existing.file.size === file.size &&
-                existing.file.lastModified === file.lastModified,
-            ),
-        )
-        .map((file) => ({
-          id: crypto.randomUUID(),
-          file,
-          isSelected: true,
-        })),
-    ];
-
-    onUploadedFilesChange(nextFiles);
+  async function handleUploadedFilesChange(files: File[]) {
+    await onUploadFiles(files);
   }
 
   function handleFileSelectionChange(id: string) {
@@ -81,13 +65,13 @@ export default function ChatBar({
       return;
     }
 
-    if (filesForSend.length === 0) {
+    if (selectedItems.length === 0) {
       setError("Please select at least one file.");
       return;
     }
 
     setError(null);
-    await onSendMessage(trimmed, filesForSend);
+    await onSendMessage(trimmed, selectedItems);
     setMessage("");
     setIsFilePopupOpen(false);
     setUploaderKey((prev) => prev + 1);
@@ -111,7 +95,7 @@ export default function ChatBar({
             <h3 className="chat-file-container-title">Uploaded files</h3>
           </div>
           <span className="chat-file-container-count">
-            {filesForSend.length}/{uploadedFiles.length} selected
+            {selectedItems.length}/{uploadedFiles.length} selected
           </span>
         </div>
 
@@ -130,13 +114,16 @@ export default function ChatBar({
                     onChange={() => handleFileSelectionChange(item.id)}
                     className="chat-file-checkbox"
                   />
-                  <span className="chat-file-list-name">{item.file.name}</span>
+                  <span className="chat-file-list-name">{item.fileName}</span>
                 </label>
 
                 <div className="chat-file-list-meta">
                   <span className="chat-file-list-size">
-                    {Math.max(1, Math.round(item.file.size / 1024))} KB
+                    {Math.max(1, Math.round(item.size / 1024))} KB
                   </span>
+                  {item.isPersisted && (
+                    <span className="chat-file-list-badge">Saved</span>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleRemoveFile(item.id)}
@@ -197,7 +184,9 @@ export default function ChatBar({
           <FileUpload
             key={uploaderKey}
             onFilesChange={handleUploadedFilesChange}
-            selectedFiles={uploadedFiles.map((item) => item.file)}
+            selectedFiles={uploadedFiles
+              .filter((item): item is ChatUploadItem & { file: File } => Boolean(item.file))
+              .map((item) => item.file)}
             hideFileList
           />
         </div>
@@ -208,7 +197,7 @@ export default function ChatBar({
           Press Enter to send, Shift+Enter for a new line.
         </p>
         <p>
-          {filesForSend.length} file(s) selected | {message.trim().length}/{MAX_MESSAGE_LENGTH}
+          {selectedItems.length} file(s) selected | {message.trim().length}/{MAX_MESSAGE_LENGTH}
         </p>
       </div>
 

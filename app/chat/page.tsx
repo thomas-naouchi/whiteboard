@@ -101,16 +101,42 @@ export default function ChatPage() {
     if (stored) {
       setSessionId(stored);
 
-      fetch(`/api/session/messages?sessionId=${encodeURIComponent(stored)}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (Array.isArray(data.messages) && data.messages.length > 0) {
+      Promise.all([
+        fetch(`/api/session/messages?sessionId=${encodeURIComponent(stored)}`).then((res) =>
+          res.json(),
+        ),
+        fetch(`/api/session/files?sessionId=${encodeURIComponent(stored)}`).then((res) =>
+          res.json(),
+        ),
+      ])
+        .then(([messageData, fileData]) => {
+          if (Array.isArray(messageData.messages) && messageData.messages.length > 0) {
             setMessages(
-              data.messages.map(
+              messageData.messages.map(
                 (m: { id: string; role: string; content: string }) => ({
                   id: m.id,
                   role: m.role as "user" | "assistant",
                   content: m.content,
+                }),
+              ),
+            );
+          }
+
+          if (Array.isArray(fileData.files)) {
+            setUploadedFiles(
+              fileData.files.map(
+                (file: {
+                  id: string;
+                  fileName: string;
+                  size: number;
+                  isSelected: boolean;
+                  isPersisted: boolean;
+                }) => ({
+                  id: file.id,
+                  fileName: file.fileName,
+                  size: file.size,
+                  isSelected: file.isSelected,
+                  isPersisted: file.isPersisted,
                 }),
               ),
             );
@@ -123,8 +149,15 @@ export default function ChatPage() {
     }
   }, []);
 
-  async function handleNewMessage(message: string, files: File[]) {
+  async function handleNewMessage(message: string, files: ChatUploadItem[]) {
     setIsSending(true);
+
+    const selectedNewFiles = files
+      .filter((item): item is ChatUploadItem & { file: File } => Boolean(item.file))
+      .map((item) => item.file);
+    const selectedPersistedFileIds = files
+      .filter((item) => item.isPersisted)
+      .map((item) => item.id);
 
     setMessages((prev) => [
       ...prev,
@@ -133,7 +166,7 @@ export default function ChatPage() {
         role: "user",
         content: message,
         attachments: files.map((file) => ({
-          name: file.name,
+          name: file.fileName,
           size: file.size,
         })),
       },
@@ -148,7 +181,10 @@ export default function ChatPage() {
       if (sessionId) {
         formData.append("sessionId", sessionId);
       }
-      for (const file of files) {
+      if (selectedPersistedFileIds.length > 0) {
+        formData.append("selectedFileIds", JSON.stringify(selectedPersistedFileIds));
+      }
+      for (const file of selectedNewFiles) {
         formData.append("files", file);
       }
 
@@ -308,6 +344,64 @@ export default function ChatPage() {
     setActiveWorkspace("chat");
   }
 
+  async function handleUploadFiles(files: File[]) {
+    if (files.length === 0) {
+      return;
+    }
+
+    const formData = new FormData();
+    if (sessionId) {
+      formData.append("sessionId", sessionId);
+    }
+    for (const file of files) {
+      formData.append("files", file);
+    }
+
+    const response = await fetch("/api/session/files", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.error || `Request failed: ${response.status}`);
+    }
+
+    if (typeof data.sessionId === "string" && data.sessionId.length > 0) {
+      setSessionId(data.sessionId);
+      window.localStorage.setItem(SESSION_KEY, data.sessionId);
+    }
+
+    if (Array.isArray(data.files)) {
+      setUploadedFiles((prev) => {
+        const existingIds = new Set(prev.map((item) => item.id));
+        const next = data.files
+          .filter(
+            (file: { id: string }) =>
+              typeof file.id === "string" && !existingIds.has(file.id),
+          )
+          .map(
+            (file: {
+              id: string;
+              fileName: string;
+              size: number;
+              isSelected: boolean;
+              isPersisted: boolean;
+            }) => ({
+              id: file.id,
+              fileName: file.fileName,
+              size: file.size,
+              isSelected: file.isSelected,
+              isPersisted: file.isPersisted,
+            }),
+          );
+
+        return [...prev, ...next];
+      });
+    }
+  }
+
   const selectedFileCount = uploadedFiles.filter(
     (item) => item.isSelected,
   ).length;
@@ -400,6 +494,7 @@ export default function ChatPage() {
               />
               <ChatBar
                 onSendMessage={handleNewMessage}
+                onUploadFiles={handleUploadFiles}
                 isSending={isSending}
                 uploadedFiles={uploadedFiles}
                 onUploadedFilesChange={setUploadedFiles}
