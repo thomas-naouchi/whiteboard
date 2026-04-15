@@ -1134,6 +1134,332 @@
   color: rgb(255 222 226);
 }
 
+.sorting-panel {
+  background:
+    radial-gradient(circle at top, rgb(255 255 255 / 0.03), transparent 58%),
+    rgb(15 15 15);
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 1.75rem;
+  display: grid;
+  gap: 1.25rem;
+  padding: 1.25rem;
+}
+
+.sorting-panel-heading,
+.sorting-card-heading,
+.sorting-folder-topline,
+.sorting-controls,
+.sorting-actions,
+.sorting-scope-buttons,
+.sorting-summary-strip,
+.sorting-folder-file,
+.sorting-folder-file-meta,
+.sorting-view-tabs {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.sorting-panel-kicker,
+.sorting-card-kicker,
+.sorting-folder-label,
+.sorting-scope-label,
+.sorting-instruction-label {
+  color: rgb(255 255 255 / 0.52);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  margin: 0 0 0.35rem;
+  text-transform: uppercase;
+}
+
+.sorting-panel-title,
+.sorting-card-title,
+.sorting-folder-name {
+  font-size: clamp(1.5rem, 3vw, 2.8rem);
+  font-weight: 700;
+  line-height: 1.02;
+  margin: 0;
+}
+
+.sorting-card-title,
+.sorting-folder-name {
+  font-size: 1.18rem;
+}
+
+.sorting-panel-copy,
+.sorting-helper-copy,
+.sorting-view-description,
+.sorting-folder-rationale,
+.sorting-folder-file-reason,
+.sorting-activity-detail {
+  color: rgb(255 255 255 / 0.72);
+  font-size: 1rem;
+  line-height: 1.65;
+  margin: 0;
+}
+
+.sorting-panel-badge,
+.sorting-card-badge,
+.sorting-folder-count,
+.sorting-folder-file-badge,
+.sorting-folder-file-size,
+.sorting-view-tab,
+.sorting-scope-button,
+.sorting-run-button,
+.sorting-export-button {
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.sorting-panel-badge,
+.sorting-card-badge,
+.sorting-folder-count,
+.sorting-folder-file-badge,
+.sorting-folder-file-size,
+.sorting-view-tab,
+.sorting-scope-button {
+  background: rgb(255 255 255 / 0.04);
+  color: rgb(255 255 255 / 0.78);
+  font-size: 0.84rem;
+  padding: 0.45rem 0.85rem;
+}
+
+.sorting-controls,
+.sorting-grid,
+.sorting-tree {
+  display: grid;
+  gap: 1rem;
+}
+
+.sorting-controls {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+}
+
+.sorting-scope,
+.sorting-instruction,
+.sorting-results-card,
+.sorting-activity-card,
+.sorting-folder-card {
+  background: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 0.03),
+    rgb(255 255 255 / 0.015)
+  );
+  border: 1px solid rgb(255 255 255 / 0.09);
+  border-radius: 1.5rem;
+}
+
+.sorting-scope,
+.sorting-instruction {
+  padding: 1rem;
+}
+
+.sorting-scope-buttons {
+  justify-content: flex-start;
+  margin-top: 0.5rem;
+}
+
+.sorting-scope-button,
+.sorting-view-tab {
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.sorting-scope-button:hover,
+.sorting-view-tab:hover {
+  border-color: rgb(255 255 255 / 0.22);
+  transform: translateY(-1px);
+}
+
+.sorting-scope-button-active,
+.sorting-view-tab-active {
+  background: rgb(244 240 232);
+  border-color: rgb(244 240 232);
+  color: rgb(15 15 15);
+}
+
+.sorting-instruction {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.sorting-instruction-input {
+  background: rgb(255 255 255 / 0.03);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 1rem;
+  color: rgb(255 255 255 / 0.92);
+  font: inherit;
+  min-height: 3.25rem;
+  padding: 0 1rem;
+}
+
+.sorting-instruction-input:focus {
+  border-color: rgb(255 255 255 / 0.24);
+  outline: none;
+}
+
+.sorting-actions {
+  align-self: stretch;
+  gap: 0.85rem;
+}
+
+.sorting-run-button,
+.sorting-export-button {
+  cursor: pointer;
+  font: inherit;
+  min-height: 3.25rem;
+  padding: 0 1.2rem;
+  transition:
+    transform 180ms ease,
+    opacity 180ms ease,
+    border-color 180ms ease;
+}
+
+.sorting-run-button {
+  background: rgb(244 240 232);
+  border-color: rgb(244 240 232);
+  color: rgb(15 15 15);
+}
+
+.sorting-export-button {
+  background: transparent;
+  color: rgb(255 255 255 / 0.88);
+}
+
+.sorting-run-button:hover,
+.sorting-export-button:hover {
+  transform: translateY(-1px);
+}
+
+.sorting-run-button:disabled,
+.sorting-export-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  transform: none;
+}
+
+.sorting-helper-copy {
+  color: rgb(255 255 255 / 0.62);
+  font-size: 0.92rem;
+}
+
+.sorting-feedback {
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 1rem;
+  font-size: 0.98rem;
+  margin: 0;
+  padding: 0.9rem 1rem;
+}
+
+.sorting-feedback-error {
+  background: rgb(113 28 36 / 0.26);
+  border-color: rgb(255 164 173 / 0.18);
+  color: rgb(255 222 226);
+}
+
+.sorting-feedback-info {
+  background: rgb(255 255 255 / 0.03);
+  color: rgb(255 255 255 / 0.82);
+}
+
+.sorting-grid {
+  grid-template-columns: minmax(320px, 0.8fr) minmax(0, 1.45fr);
+}
+
+.sorting-activity-card,
+.sorting-results-card,
+.sorting-folder-card {
+  padding: 1.1rem;
+}
+
+.sorting-activity-list,
+.sorting-folder-file-list {
+  display: grid;
+  gap: 0.9rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sorting-activity-item {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.85rem;
+}
+
+.sorting-activity-dot {
+  background: rgb(255 255 255 / 0.25);
+  border-radius: 999px;
+  flex: 0 0 auto;
+  height: 0.7rem;
+  margin-top: 0.4rem;
+  width: 0.7rem;
+}
+
+.sorting-activity-dot-live {
+  animation: whiteboardDotPulse 1.2s infinite ease-in-out;
+  background: rgb(244 240 232);
+}
+
+.sorting-activity-label,
+.sorting-folder-file-name {
+  color: rgb(255 255 255 / 0.95);
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.2rem;
+}
+
+.sorting-summary-strip {
+  border-top: 1px solid rgb(255 255 255 / 0.08);
+  color: rgb(255 255 255 / 0.6);
+  flex-wrap: wrap;
+  font-size: 0.84rem;
+  justify-content: flex-start;
+  margin-top: 1rem;
+  padding-top: 1rem;
+}
+
+.sorting-empty-state {
+  border: 1px dashed rgb(255 255 255 / 0.12);
+  border-radius: 1.25rem;
+  color: rgb(255 255 255 / 0.56);
+  font-size: 1rem;
+  min-height: 12rem;
+  padding: 1.25rem;
+}
+
+.sorting-view-tabs {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.sorting-tree {
+  margin-top: 1rem;
+}
+
+.sorting-folder-rationale {
+  margin-top: 0.55rem;
+}
+
+.sorting-folder-file {
+  background: rgb(255 255 255 / 0.025);
+  border: 1px solid rgb(255 255 255 / 0.06);
+  border-radius: 1rem;
+  padding: 0.85rem 0.95rem;
+}
+
+.sorting-folder-file-meta {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+}
+
 @keyframes whiteboardDotPulse {
   0%,
   80%,
@@ -1170,6 +1496,11 @@
     grid-template-columns: 1fr;
   }
 
+  .sorting-controls,
+  .sorting-grid {
+    grid-template-columns: 1fr;
+  }
+
   .chat-sidebar {
     border-bottom: 1px solid rgb(255 255 255 / 0.1);
     border-right: 0;
@@ -1177,7 +1508,7 @@
   }
 
   .chat-sidebar-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .chat-main {
@@ -1194,14 +1525,24 @@
   .retrieval-panel-heading,
   .retrieval-preview-header,
   .retrieval-search-field,
-  .retrieval-preview-actions {
+  .retrieval-preview-actions,
+  .sorting-panel-heading,
+  .sorting-card-heading,
+  .sorting-folder-topline,
+  .sorting-controls,
+  .sorting-actions,
+  .sorting-scope-buttons,
+  .sorting-folder-file,
+  .sorting-folder-file-meta {
     align-items: stretch;
     flex-direction: column;
   }
 
   .retrieval-search-button,
   .retrieval-preview-primary,
-  .retrieval-preview-secondary {
+  .retrieval-preview-secondary,
+  .sorting-run-button,
+  .sorting-export-button {
     width: 100%;
   }
 
@@ -1238,5 +1579,9 @@
 
   .chat-history-item {
     max-width: 94%;
+  }
+
+  .chat-sidebar-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
