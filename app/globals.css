@@ -1,5 +1,4 @@
-:root,
-html.dark-mode {
+:root {
   --background: #050505;
   --foreground: #f5f5f0;
   --surface: rgba(255, 255, 255, 0.04);
@@ -8,31 +7,39 @@ html.dark-mode {
   --border-strong: rgba(255, 255, 255, 0.2);
   --muted: rgba(245, 245, 240, 0.68);
   --muted-strong: rgba(245, 245, 240, 0.8);
+  --panel: rgba(10, 10, 10, 0.84);
+  --panel-border: rgba(255, 255, 255, 0.14);
+  --accent-solid: #f4f1ea;
+  --accent-soft: #d7d1c6;
+  --accent-contrast: #050505;
+  --selection: rgba(255, 255, 255, 0.18);
+  --theme-shadow: 0 16px 40px rgba(0, 0, 0, 0.24);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-html.light-mode {
-  --background: #f8f7f5;
-  --foreground: #1a1a18;
-  --surface: rgba(0, 0, 0, 0.04);
-  --surface-strong: rgba(0, 0, 0, 0.08);
-  --border: rgba(0, 0, 0, 0.1);
-  --border-strong: rgba(0, 0, 0, 0.16);
-  --muted: rgba(26, 26, 24, 0.62);
-  --muted-strong: rgba(26, 26, 24, 0.76);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+html[data-theme="light"] {
+  --background: #f4f1ea;
+  --foreground: #111111;
+  --surface: rgba(17, 17, 17, 0.04);
+  --surface-strong: rgba(17, 17, 17, 0.08);
+  --border: rgba(17, 17, 17, 0.12);
+  --border-strong: rgba(17, 17, 17, 0.18);
+  --muted: rgba(17, 17, 17, 0.58);
+  --muted-strong: rgba(17, 17, 17, 0.74);
+  --panel: rgba(255, 255, 255, 0.84);
+  --panel-border: rgba(17, 17, 17, 0.1);
+  --accent-solid: #111111;
+  --accent-soft: #343434;
+  --accent-contrast: #f6f3eb;
+  --selection: rgba(17, 17, 17, 0.16);
+  --theme-shadow: 0 14px 36px rgba(17, 17, 17, 0.12);
 }
 
 *,
 *::before,
 *::after {
   box-sizing: border-box;
-  transition: background-color 0.5s cubic-bezier(0.4, 0, 0.2, 1),
-              color 0.5s cubic-bezier(0.4, 0, 0.2, 1),
-              border-color 0.5s cubic-bezier(0.4, 0, 0.2, 1),
-              box-shadow 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 html,
@@ -48,6 +55,9 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans, system-ui, -apple-system, Segoe UI, sans-serif);
   text-rendering: optimizeLegibility;
+  transition:
+    background-color 240ms ease,
+    color 240ms ease;
 }
 
 a {
@@ -55,32 +65,26 @@ a {
 }
 
 ::selection {
-  background: rgba(255, 255, 255, 0.18);
-  color: #fff;
+  background: var(--selection);
+  color: var(--foreground);
 }
 
 body::before {
   background:
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.1), transparent 34%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 24%);
+    radial-gradient(circle at top, color-mix(in srgb, var(--foreground) 12%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--foreground) 4%, transparent), transparent 24%);
   content: "";
   inset: 0;
   pointer-events: none;
   position: fixed;
   z-index: -2;
-  transition: background 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-html.light-mode body::before {
-  background:
-    radial-gradient(circle at top, rgba(0, 0, 0, 0.04), transparent 34%),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.02), transparent 24%);
+  transition: background 240ms ease;
 }
 
 body::after {
   background:
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--foreground) 3%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--foreground) 3%, transparent) 1px, transparent 1px);
   background-size: 72px 72px;
   content: "";
   inset: 0;
@@ -89,14 +93,69 @@ body::after {
   pointer-events: none;
   position: fixed;
   z-index: -1;
-  transition: background 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background 240ms ease;
 }
 
-html.light-mode body::after {
+.theme-toggle-dock {
+  pointer-events: none;
+  position: fixed;
+  right: 1.15rem;
+  top: 1rem;
+  z-index: 40;
+}
+
+.theme-toggle {
+  align-items: center;
+  backdrop-filter: blur(16px);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  box-shadow: var(--theme-shadow);
+  color: var(--foreground);
+  cursor: pointer;
+  display: inline-flex;
+  height: 54px;
+  justify-content: center;
+  pointer-events: auto;
+  width: 54px;
+  transition:
+    background-color 220ms ease,
+    border-color 220ms ease,
+    color 220ms ease,
+    box-shadow 220ms ease;
+}
+
+.theme-toggle-icon-wrap {
+  align-items: center;
   background:
-    linear-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.02) 1px, transparent 1px);
-  opacity: 0.15;
+    radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--foreground) 10%, transparent), transparent 58%),
+    color-mix(in srgb, var(--foreground) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  border-radius: 999px;
+  display: inline-flex;
+  height: 36px;
+  justify-content: center;
+  position: relative;
+  width: 36px;
+}
+
+.theme-toggle-icon {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  position: absolute;
+}
+
+.sr-only {
+  border: 0;
+  clip: rect(0, 0, 0, 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
 }
 
 .landing-page {
@@ -246,9 +305,9 @@ html.light-mode body::after {
 }
 
 .landing-button-primary {
-  background: #f4f1ea;
-  box-shadow: 0 14px 40px rgba(255, 255, 255, 0.12);
-  color: #050505;
+  background: linear-gradient(135deg, var(--accent-solid), var(--accent-soft));
+  box-shadow: 0 14px 40px color-mix(in srgb, var(--accent-solid) 16%, transparent);
+  color: var(--accent-contrast);
   font-weight: 700;
 }
 
@@ -273,8 +332,8 @@ html.light-mode body::after {
 }
 
 .landing-proof-pill {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--muted);
   font-size: 0.78rem;
@@ -287,21 +346,25 @@ html.light-mode body::after {
 
 .landing-product-window {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
-    rgba(10, 10, 10, 0.84);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+    linear-gradient(180deg, color-mix(in srgb, var(--foreground) 8%, transparent), color-mix(in srgb, var(--foreground) 3%, transparent)),
+    var(--panel);
+  border: 1px solid var(--panel-border);
   border-radius: 28px;
   box-shadow:
-    0 40px 120px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    0 40px 120px color-mix(in srgb, var(--foreground) 16%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 8%, transparent);
   overflow: hidden;
   padding: 1rem;
   position: relative;
   transform: rotateY(-10deg) rotateX(5deg);
+  transition:
+    background 240ms ease,
+    border-color 240ms ease,
+    box-shadow 240ms ease;
 }
 
 .landing-product-window::before {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.18), transparent 36%);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--foreground) 18%, transparent), transparent 36%);
   content: "";
   inset: 0;
   pointer-events: none;
@@ -713,43 +776,4 @@ html.light-mode body::after {
   .landing-window-layout {
     grid-template-columns: 1fr;
   }
-}
-
-/* Dark Mode Toggle Button */
-.dark-mode-toggle {
-  position: fixed;
-  top: 1.25rem;
-  right: 1.25rem;
-  z-index: 1000;
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--surface-strong);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--foreground);
-  backdrop-filter: blur(8px);
-  padding: 0;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.dark-mode-toggle:hover {
-  background: var(--surface-strong);
-  border-color: var(--border-strong);
-}
-
-.toggle-icon {
-  position: absolute;
-  color: currentColor;
-}
-
-.toggle-glow {
-  position: absolute;
-  inset: -4px;
-  border-radius: 12px;
-  pointer-events: none;
-  z-index: -1;
 }

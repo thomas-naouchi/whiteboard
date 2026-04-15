@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { DarkModeProvider } from "@/lib/DarkModeContext";
 import { DarkModeToggle } from "@/components/DarkModeToggle";
+import { DarkModeProvider } from "@/lib/DarkModeContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,10 +14,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
         <DarkModeProvider>
-          <DarkModeToggle />
+          <div className="theme-toggle-dock">
+            <DarkModeToggle />
+          </div>
           {children}
         </DarkModeProvider>
       </body>

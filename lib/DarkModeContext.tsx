@@ -1,61 +1,72 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+
+type ThemeMode = "dark" | "light";
 
 type DarkModeContextType = {
   isDark: boolean;
+  mode: ThemeMode;
+  mounted: boolean;
   toggle: () => void;
 };
 
+const STORAGE_KEY = "whiteboard-theme";
+
 const DarkModeContext = createContext<DarkModeContextType | undefined>(
-  undefined
+  undefined,
 );
+
+function getPreferredMode(): ThemeMode {
+  if (typeof window === "undefined") {
+    return "dark";
+  }
+
+  const saved = window.localStorage.getItem(STORAGE_KEY);
+  if (saved === "dark" || saved === "light") {
+    return saved;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
 
 export function DarkModeProvider({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [isDark, setIsDark] = useState(true);
+  const [mode, setMode] = useState<ThemeMode>("dark");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // Check localStorage and system preference
-    const saved = localStorage.getItem("darkMode");
-    if (saved !== null) {
-      setIsDark(saved === "true");
-    } else {
-      const prefersDark = window.matchMedia(
-        "(prefers-color-scheme: dark)"
-      ).matches;
-      setIsDark(prefersDark);
-    }
+    const nextMode = getPreferredMode();
+    setMode(nextMode);
     setMounted(true);
   }, []);
 
   useEffect(() => {
     if (!mounted) return;
-    
+
     const root = document.documentElement;
-    if (isDark) {
-      root.classList.remove("light-mode");
-      root.classList.add("dark-mode");
-    } else {
-      root.classList.remove("dark-mode");
-      root.classList.add("light-mode");
-    }
-    localStorage.setItem("darkMode", isDark.toString());
-  }, [isDark, mounted]);
+    root.dataset.theme = mode;
+    window.localStorage.setItem(STORAGE_KEY, mode);
+  }, [mode, mounted]);
 
-  const toggle = () => setIsDark(!isDark);
-
-  // Prevent hydration mismatch
-  if (!mounted) {
-    return <>{children}</>;
-  }
+  const value = useMemo(
+    () => ({
+      isDark: mode === "dark",
+      mode,
+      mounted,
+      toggle: () =>
+        setMode((current) => (current === "dark" ? "light" : "dark")),
+    }),
+    [mode, mounted],
+  );
 
   return (
-    <DarkModeContext.Provider value={{ isDark, toggle }}>
+    <DarkModeContext.Provider value={value}>
       {children}
     </DarkModeContext.Provider>
   );
@@ -63,8 +74,10 @@ export function DarkModeProvider({
 
 export function useDarkMode() {
   const context = useContext(DarkModeContext);
+
   if (!context) {
     throw new Error("useDarkMode must be used within DarkModeProvider");
   }
+
   return context;
 }

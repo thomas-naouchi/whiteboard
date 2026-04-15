@@ -1,74 +1,59 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useDarkMode } from "@/lib/DarkModeContext";
 
 export function DarkModeToggle() {
-  const { isDark, toggle } = useDarkMode();
-
-  const springTransition = {
-    type: "spring",
-    stiffness: 200,
-    damping: 25,
-  };
+  const { isDark, mode, mounted, toggle } = useDarkMode();
+  const reduceMotion = useReducedMotion();
 
   return (
     <motion.button
+      type="button"
+      className="theme-toggle"
       onClick={toggle}
-      className="dark-mode-toggle"
-      whileHover={{ scale: 1.1 }}
-      whileTap={{ scale: 0.95 }}
-      transition={springTransition}
       aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
+      title={`Switch to ${isDark ? "light" : "dark"} mode`}
+      initial={false}
+      whileHover={reduceMotion ? undefined : { y: -1, scale: 1.01 }}
+      whileTap={reduceMotion ? undefined : { scale: 0.98 }}
+      transition={{ type: "spring", stiffness: 260, damping: 20 }}
     >
-      {/* Sun Icon */}
-      <motion.svg
-        className="toggle-icon toggle-sun"
-        viewBox="0 0 24 24"
-        width="18"
-        height="18"
-        initial={{ opacity: isDark ? 0 : 1, rotate: isDark ? -180 : 0 }}
-        animate={{ opacity: isDark ? 0 : 1, rotate: isDark ? -180 : 0 }}
-        transition={{ duration: 0.4 }}
-      >
-        <circle cx="12" cy="12" r="5" fill="currentColor" />
-        <line x1="12" y1="1" x2="12" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <line x1="12" y1="21" x2="12" y2="23" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <line x1="1" y1="12" x2="3" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <line x1="21" y1="12" x2="23" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      </motion.svg>
+      <span className="theme-toggle-icon-wrap" aria-hidden="true">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={mode}
+            className="theme-toggle-icon"
+            initial={reduceMotion ? { opacity: 1 } : { opacity: 0, rotate: -24, scale: 0.7 }}
+            animate={reduceMotion ? { opacity: 1 } : { opacity: 1, rotate: 0, scale: 1 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, rotate: 24, scale: 0.7 }}
+            transition={{ duration: 0.22 }}
+          >
+            {isDark ? (
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                <path
+                  d="M21 12.79A9 9 0 1 1 11.21 3c-.12.37-.21.76-.21 1.17A8.79 8.79 0 0 0 19.83 13c.41 0 .8-.09 1.17-.21Z"
+                  fill="currentColor"
+                />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                <circle cx="12" cy="12" r="4.5" fill="currentColor" />
+                <path
+                  d="M12 2.5v2.2M12 19.3v2.2M21.5 12h-2.2M4.7 12H2.5M18.72 5.28l-1.56 1.56M6.84 17.16l-1.56 1.56M18.72 18.72l-1.56-1.56M6.84 6.84 5.28 5.28"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                />
+              </svg>
+            )}
+          </motion.span>
+        </AnimatePresence>
+      </span>
 
-      {/* Moon Icon */}
-      <motion.svg
-        className="toggle-icon toggle-moon"
-        viewBox="0 0 24 24"
-        width="18"
-        height="18"
-        initial={{ opacity: isDark ? 1 : 0, rotate: isDark ? 0 : 180 }}
-        animate={{ opacity: isDark ? 1 : 0, rotate: isDark ? 0 : 180 }}
-        transition={{ duration: 0.4 }}
-      >
-        <path
-          d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
-          fill="currentColor"
-        />
-      </motion.svg>
-
-      {/* Glow effect */}
-      <motion.div
-        className="toggle-glow"
-        initial={false}
-        animate={{
-          boxShadow: isDark
-            ? "0 0 12px rgba(255, 200, 100, 0.3)"
-            : "0 0 12px rgba(100, 200, 255, 0.3)",
-        }}
-        transition={{ duration: 0.6 }}
-      />
+      <span className="sr-only">
+        {mounted ? (isDark ? "Dark mode enabled" : "Light mode enabled") : "Theme"}
+      </span>
     </motion.button>
   );
 }
