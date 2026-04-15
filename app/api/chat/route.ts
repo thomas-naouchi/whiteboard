@@ -1,10 +1,27 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
-import * as officeParser from "officeparser";
-import pdf from "pdf-parse";
+import {
+  buildSearchText,
+  buildSummaryExcerpt,
+  generateTags,
+  isMissingMetadataColumnsError,
+  sanitizeStorageFileName,
+} from "@/lib/file-metadata";
+import {
+  buildSemanticChunks,
+  createEmbeddings,
+  isMissingChunksTableError,
+} from "@/lib/file-semantic";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { extractTextFromFile } from "@/lib/file-text";
 
 export const runtime = "nodejs";
+
+type StoredSessionFile = {
+  id: string;
+  file_name: string;
+  storage_path: string;
+};
 
 function getClient() {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -14,216 +31,7 @@ function getClient() {
   return new OpenAI({ apiKey });
 }
 
-async function extractTextFromFile(file: File): Promise<string> {
-  const lowerName = file.name.toLowerCase();
-
-  if (lowerName.endsWith(".txt")) {
-    return await file.text();
-  }
-
-  if (lowerName.endsWith(".pdf")) {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const result = await pdf(buffer);
-    return result.text;
-  }
-
-  if (lowerName.endsWith(".pptx")) {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const ast = await officeParser.parseOffice(buffer);
-    return ast.toText();
-  }
-
-  throw new Error("Unsupported file type. Allowed: .txt, .pdf, .pptx");
-}
-
 const STORAGE_BUCKET = "whiteboard-files";
-const MAX_GENERATED_TAGS = 12;
-const MAX_TAG_LENGTH = 32;
-const EXCERPT_LENGTH = 280;
-
-const STOP_WORDS = new Set([
-  "a",
-  "about",
-  "after",
-  "all",
-  "also",
-  "an",
-  "and",
-  "any",
-  "are",
-  "as",
-  "at",
-  "be",
-  "because",
-  "been",
-  "before",
-  "being",
-  "between",
-  "both",
-  "but",
-  "by",
-  "can",
-  "could",
-  "did",
-  "do",
-  "does",
-  "done",
-  "during",
-  "each",
-  "either",
-  "for",
-  "from",
-  "had",
-  "has",
-  "have",
-  "having",
-  "he",
-  "her",
-  "here",
-  "hers",
-  "him",
-  "his",
-  "how",
-  "i",
-  "if",
-  "in",
-  "into",
-  "is",
-  "it",
-  "its",
-  "itself",
-  "just",
-  "me",
-  "more",
-  "most",
-  "my",
-  "no",
-  "not",
-  "now",
-  "of",
-  "on",
-  "one",
-  "only",
-  "or",
-  "other",
-  "our",
-  "out",
-  "over",
-  "same",
-  "she",
-  "so",
-  "some",
-  "such",
-  "than",
-  "that",
-  "the",
-  "their",
-  "them",
-  "then",
-  "there",
-  "these",
-  "they",
-  "this",
-  "those",
-  "through",
-  "to",
-  "too",
-  "under",
-  "until",
-  "up",
-  "very",
-  "was",
-  "we",
-  "were",
-  "what",
-  "when",
-  "where",
-  "which",
-  "while",
-  "who",
-  "why",
-  "will",
-  "with",
-  "you",
-  "your",
-]);
-
-function normalizeTag(raw: string) {
-  return raw
-    .toLowerCase()
-    .replace(/[_-]+/g, " ")
-    .replace(/[^a-z0-9 ]+/g, "")
-    .trim();
-}
-
-function tokenize(raw: string) {
-  const matches = raw.match(/[a-zA-Z][a-zA-Z0-9_-]{2,}/g) ?? [];
-  return matches
-    .map((value) => normalizeTag(value))
-    .filter(
-      (value) =>
-        value.length >= 3 &&
-        value.length <= MAX_TAG_LENGTH &&
-        !STOP_WORDS.has(value),
-    );
-}
-
-function fileTypeTag(fileName: string) {
-  const lower = fileName.toLowerCase();
-  if (lower.endsWith(".pdf")) return "pdf";
-  if (lower.endsWith(".pptx")) return "presentation";
-  if (lower.endsWith(".txt")) return "text";
-  return null;
-}
-
-function generateTags(fileName: string, extractedText: string) {
-  const score = new Map<string, number>();
-
-  const baseName = fileName.replace(/\.[^.]+$/, "");
-  for (const token of tokenize(baseName)) {
-    score.set(token, (score.get(token) ?? 0) + 8);
-  }
-
-  const sampledText = extractedText.slice(0, 20_000);
-  for (const token of tokenize(sampledText)) {
-    score.set(token, (score.get(token) ?? 0) + 1);
-  }
-
-  const detectedType = fileTypeTag(fileName);
-  if (detectedType) {
-    score.set(detectedType, (score.get(detectedType) ?? 0) + 6);
-  }
-
-  return Array.from(score.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([tag]) => tag)
-    .slice(0, MAX_GENERATED_TAGS);
-}
-
-function buildSummaryExcerpt(extractedText: string) {
-  const compact = extractedText.replace(/\s+/g, " ").trim();
-  if (!compact) return null;
-  return compact.slice(0, EXCERPT_LENGTH);
-}
-
-function sanitizeStorageFileName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
-function isMissingTagColumnsError(error: unknown) {
-  if (!error || typeof error !== "object") return false;
-
-  const err = error as { code?: string; message?: string; details?: string };
-  const code = String(err.code ?? "");
-  const text = `${err.message ?? ""} ${err.details ?? ""}`.toLowerCase();
-
-  return (
-    code === "42703" ||
-    code === "PGRST204" ||
-    text.includes("tags") ||
-    text.includes("summary_excerpt")
-  );
-}
 
 export async function POST(req: Request) {
   try {
@@ -233,6 +41,7 @@ export async function POST(req: Request) {
     const rawHistory = formData.get("history");
     const rawPersistedDoc = formData.get("persistedDocumentText");
     const rawSessionId = formData.get("sessionId");
+    const rawSelectedFileIds = formData.get("selectedFileIds");
 
     const message =
       typeof rawMessage === "string" ? rawMessage.trim() : undefined;
@@ -274,6 +83,21 @@ export async function POST(req: Request) {
         ? rawSessionId
         : null;
 
+    let selectedFileIds: string[] = [];
+    if (typeof rawSelectedFileIds === "string" && rawSelectedFileIds.length > 0) {
+      try {
+        const parsed = JSON.parse(rawSelectedFileIds);
+        if (Array.isArray(parsed)) {
+          selectedFileIds = parsed.filter(
+            (value): value is string =>
+              typeof value === "string" && value.trim().length > 0,
+          );
+        }
+      } catch {
+        // ignore malformed selection payload
+      }
+    }
+
     const uploadedFiles = formData
       .getAll("files")
       .filter((v): v is File => v instanceof File);
@@ -283,6 +107,7 @@ export async function POST(req: Request) {
       extractedText: string;
       generatedTags: string[];
       summaryExcerpt: string | null;
+      searchText: string | null;
     }> = [];
 
     if (uploadedFiles.length > 0) {
@@ -294,6 +119,7 @@ export async function POST(req: Request) {
           extractedText: text,
           generatedTags: generateTags(file.name, text),
           summaryExcerpt: buildSummaryExcerpt(text),
+          searchText: buildSearchText(text),
         });
 
         if (text.trim()) {
@@ -306,6 +132,51 @@ export async function POST(req: Request) {
         combinedDocumentText = combinedDocumentText
           ? `${combinedDocumentText}\n\n${newDocText}`
           : newDocText;
+      }
+    }
+
+    if (selectedFileIds.length > 0 && sessionId) {
+      try {
+        const supabase = getSupabaseServerClient();
+        const { data, error } = await supabase
+          .from("whiteboard_files")
+          .select("id, file_name, storage_path")
+          .eq("session_id", sessionId)
+          .in("id", selectedFileIds);
+
+        if (error) {
+          throw error;
+        }
+
+        const storedFiles = (data ?? []) as StoredSessionFile[];
+        const parts: string[] = [];
+
+        for (const file of storedFiles) {
+          const download = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .download(file.storage_path);
+
+          if (download.error) {
+            throw download.error;
+          }
+
+          const extractedText = await extractTextFromFile(
+            new File([await download.data.arrayBuffer()], file.file_name),
+          );
+
+          if (extractedText.trim()) {
+            parts.push(`# ${file.file_name}\n${extractedText}`);
+          }
+        }
+
+        const selectedDocText = parts.join("\n\n");
+        if (selectedDocText) {
+          combinedDocumentText = combinedDocumentText
+            ? `${combinedDocumentText}\n\n${selectedDocText}`
+            : selectedDocText;
+        }
+      } catch (error) {
+        console.error("Stored file retrieval error:", error);
       }
     }
 
@@ -363,7 +234,7 @@ export async function POST(req: Request) {
       // Store uploaded files in Storage and record in whiteboard_files
       if (processedUploads.length > 0 && sessionId) {
         for (const item of processedUploads) {
-          const { file, generatedTags, summaryExcerpt } = item;
+          const { file, generatedTags, summaryExcerpt, searchText } = item;
           const path = `${sessionId}/${crypto.randomUUID()}-${sanitizeStorageFileName(file.name)}`;
           const buffer = Buffer.from(await file.arrayBuffer());
           const { error: uploadErr } = await supabase.storage
@@ -375,7 +246,7 @@ export async function POST(req: Request) {
           if (uploadErr) {
             throw uploadErr;
           }
-          const { error: fileRowErr } = await supabase
+          let fileRowResult = await supabase
             .from("whiteboard_files")
             .insert({
               session_id: sessionId,
@@ -385,10 +256,16 @@ export async function POST(req: Request) {
               byte_size: file.size,
               tags: generatedTags,
               summary_excerpt: summaryExcerpt,
-            });
+              search_text: searchText,
+            })
+            .select("id")
+            .single();
 
-          if (fileRowErr && isMissingTagColumnsError(fileRowErr)) {
-            const { error: fallbackErr } = await supabase
+          if (
+            fileRowResult.error &&
+            isMissingMetadataColumnsError(fileRowResult.error)
+          ) {
+            fileRowResult = await supabase
               .from("whiteboard_files")
               .insert({
                 session_id: sessionId,
@@ -396,15 +273,42 @@ export async function POST(req: Request) {
                 storage_path: path,
                 content_type: file.type || null,
                 byte_size: file.size,
-              });
-            if (fallbackErr) {
-              throw fallbackErr;
-            }
-            continue;
+              })
+              .select("id")
+              .single();
           }
 
-          if (fileRowErr) {
-            throw fileRowErr;
+          if (fileRowResult.error) {
+            throw fileRowResult.error;
+          }
+
+          try {
+            const semanticChunks = buildSemanticChunks(item.extractedText);
+            if (semanticChunks.length > 0) {
+              const embeddings = await createEmbeddings(semanticChunks);
+              const chunkRows = semanticChunks.map((chunkText, index) => ({
+                file_id: fileRowResult.data.id,
+                session_id: sessionId,
+                chunk_index: index,
+                chunk_text: chunkText,
+                embedding: embeddings[index],
+              }));
+
+              const { error: chunkInsertError } = await supabase
+                .from("whiteboard_file_chunks")
+                .insert(chunkRows);
+
+              if (
+                chunkInsertError &&
+                !isMissingChunksTableError(chunkInsertError)
+              ) {
+                throw chunkInsertError;
+              }
+            }
+          } catch (chunkError) {
+            if (!isMissingChunksTableError(chunkError)) {
+              console.error("Semantic chunk persistence error:", chunkError);
+            }
           }
         }
       }
