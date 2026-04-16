@@ -230,3 +230,96 @@ export async function POST(req: Request) {
     );
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const body = await req.json().catch(() => null);
+    const sessionId =
+      typeof body?.sessionId === "string" ? body.sessionId.trim() : "";
+    const fileId = typeof body?.fileId === "string" ? body.fileId.trim() : "";
+
+    if (!sessionId || !fileId) {
+      return NextResponse.json(
+        { error: "Missing required fields: sessionId and fileId" },
+        { status: 400 },
+      );
+    }
+
+    const supabase = getSupabaseServerClient();
+
+    const { data: targetFile, error: targetError } = await supabase
+      .from("whiteboard_files")
+      .select("id, storage_path")
+      .eq("id", fileId)
+      .eq("session_id", sessionId)
+      .single();
+
+    if (targetError || !targetFile) {
+      return NextResponse.json(
+        { error: "File not found in this session." },
+        { status: 404 },
+      );
+    }
+
+    const { error: chunksDeleteError } = await supabase
+      .from("whiteboard_file_chunks")
+      .delete()
+      .eq("file_id", fileId)
+      .eq("session_id", sessionId);
+
+    if (chunksDeleteError && !isMissingChunksTableError(chunksDeleteError)) {
+      throw chunksDeleteError;
+    }
+
+    const { error: rowDeleteError } = await supabase
+      .from("whiteboard_files")
+      .delete()
+      .eq("id", fileId)
+      .eq("session_id", sessionId);
+
+    if (rowDeleteError) {
+      throw rowDeleteError;
+    }
+
+    const storagePath =
+      typeof targetFile.storage_path === "string"
+        ? targetFile.storage_path
+        : null;
+
+    if (storagePath) {
+      const { error: storageDeleteError } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .remove([storagePath]);
+
+      if (storageDeleteError) {
+        console.error("Storage file delete warning:", storageDeleteError);
+      }
+    }
+
+    const { data: remainingFiles, error: fetchError } = await supabase
+      .from("whiteboard_files")
+      .select("id, file_name, byte_size, created_at")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false });
+
+    if (fetchError) {
+      throw fetchError;
+    }
+
+    const files = (remainingFiles ?? []).map((file) => ({
+      id: file.id,
+      fileName: file.file_name ?? "Untitled file",
+      size: Number(file.byte_size ?? 0),
+      isSelected: true,
+      isPersisted: true,
+    }));
+
+    return NextResponse.json({ files });
+  } catch (error) {
+    console.error("DELETE /api/session/files error:", error);
+    return NextResponse.json(
+      { error: getErrorMessage(error) },
+      { status: 500 },
+    );
+  }
+}

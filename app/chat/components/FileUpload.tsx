@@ -7,6 +7,7 @@ interface FileUploadProps {
   onPinFile?: (file: File) => void;
   selectedFiles?: File[];
   hideFileList?: boolean;
+  maxFilesPerPick?: number;
 }
 
 export default function FileUpload({
@@ -14,6 +15,7 @@ export default function FileUpload({
   onPinFile,
   selectedFiles: controlledFiles,
   hideFileList = false,
+  maxFilesPerPick = 5,
 }: FileUploadProps) {
   const [internalFiles, setInternalFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -32,8 +34,8 @@ export default function FileUpload({
       return;
     }
 
-    if (fileArray.length > 5) {
-      setError("You can upload a maximum of 5 files.");
+    if (fileArray.length > maxFilesPerPick) {
+      setError(`You can upload a maximum of ${maxFilesPerPick} files at once.`);
       return;
     }
 
@@ -49,8 +51,8 @@ export default function FileUpload({
       }
     }
 
-    if (selectedFiles.length + fileArray.length > 5) {
-      setError("You can upload a maximum of 5 files.");
+    if (selectedFiles.length + fileArray.length > maxFilesPerPick) {
+      setError(`You can upload a maximum of ${maxFilesPerPick} files at once.`);
       return;
     }
 
