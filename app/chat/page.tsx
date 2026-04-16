@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import ChatBar, { type ChatUploadItem } from "./components/ChatBar";
+import ChatBar from "./components/ChatBar";
 import ChatHistory, { type ChatMessage } from "./components/ChatHistory";
+import FileUpload from "./components/FileUpload";
 import "./chat.css";
 
 const SESSION_KEY = "whiteboard-session-id";
 const MAX_CONTEXT_MESSAGES = 12;
 const MAX_CONTEXT_CHARACTERS = 12_000;
+const MAX_SELECTED_CHAT_FILES = 5;
 
 function buildContextWindow(messages: ChatMessage[]) {
   const selected: Array<{ role: "user" | "assistant"; content: string }> = [];
@@ -84,6 +86,14 @@ interface SortingPlan {
   views: SortingView[];
 }
 
+interface ChatUploadItem {
+  id: string;
+  fileName: string;
+  size: number;
+  isSelected: boolean;
+  isPersisted?: boolean;
+}
+
 const CLIENT_SORT_STAGES: SortingActivity[] = [
   {
     label: "Reading session files",
@@ -140,6 +150,8 @@ export default function ChatPage() {
   const [supabaseWarning, setSupabaseWarning] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [uploadedFiles, setUploadedFiles] = useState<ChatUploadItem[]>([]);
+  const [sessionFileError, setSessionFileError] = useState<string | null>(null);
+  const [isUploadingSessionFiles, setIsUploadingSessionFiles] = useState(false);
   const [retrievalQuery, setRetrievalQuery] = useState(
     "quotation for mark zuckerberg",
   );
@@ -194,6 +206,7 @@ export default function ChatPage() {
           }
 
           if (Array.isArray(fileData.files)) {
+            let selectedCount = 0;
             setUploadedFiles(
               fileData.files.map(
                 (file: {
@@ -206,7 +219,10 @@ export default function ChatPage() {
                   id: file.id,
                   fileName: file.fileName,
                   size: file.size,
-                  isSelected: file.isSelected,
+                  isSelected:
+                    selectedCount < MAX_SELECTED_CHAT_FILES
+                      ? ((selectedCount += 1), true)
+                      : false,
                   isPersisted: file.isPersisted,
                 }),
               ),
@@ -235,14 +251,11 @@ export default function ChatPage() {
     return () => window.clearInterval(interval);
   }, [isSorting]);
 
-  async function handleNewMessage(message: string, files: ChatUploadItem[]) {
+  async function handleNewMessage(message: string) {
     setIsSending(true);
 
-    const selectedNewFiles = files
-      .filter((item): item is ChatUploadItem & { file: File } => Boolean(item.file))
-      .map((item) => item.file);
-    const selectedPersistedFileIds = files
-      .filter((item) => item.isPersisted)
+    const selectedPersistedFileIds = uploadedFiles
+      .filter((item) => item.isPersisted && item.isSelected)
       .map((item) => item.id);
 
     setMessages((prev) => [
@@ -251,10 +264,12 @@ export default function ChatPage() {
         id: crypto.randomUUID(),
         role: "user",
         content: message,
-        attachments: files.map((file) => ({
+        attachments: uploadedFiles
+          .filter((file) => file.isSelected)
+          .map((file) => ({
           name: file.fileName,
           size: file.size,
-        })),
+          })),
       },
     ]);
 
@@ -269,9 +284,6 @@ export default function ChatPage() {
       }
       if (selectedPersistedFileIds.length > 0) {
         formData.append("selectedFileIds", JSON.stringify(selectedPersistedFileIds));
-      }
-      for (const file of selectedNewFiles) {
-        formData.append("files", file);
       }
 
       const res = await fetch("/api/chat", {
@@ -330,15 +342,13 @@ export default function ChatPage() {
   }
 
   function handleSuggestionClick(text: string) {
-    void handleNewMessage(text, []);
+    void handleNewMessage(text);
   }
 
   function handleClearHistory() {
     setMessages([]);
     setPersistedDocText("");
     setSupabaseWarning(null);
-    setSessionId(null);
-    setUploadedFiles([]);
     setRetrievalResults([]);
     setActiveResultId(null);
     setRetrievalInfo(null);
@@ -347,7 +357,7 @@ export default function ChatPage() {
     setSortingPlan(null);
     setSortingInfo(null);
     setSortingError(null);
-    window.localStorage.removeItem(SESSION_KEY);
+    setSessionFileError(null);
   }
 
   const activeResult =
@@ -429,6 +439,22 @@ export default function ChatPage() {
 
   function handleFinderChatTransition() {
     if (!activeResult) return;
+
+    const matchingFile = uploadedFiles.find((file) => file.id === activeResult.id);
+    if (!matchingFile) {
+      setSessionFileError(
+        "This file is no longer in your session list. Upload it again or choose another result.",
+      );
+      return;
+    }
+
+    setSessionFileError(null);
+    setUploadedFiles((prev) =>
+      prev.map((file) => ({
+        ...file,
+        isSelected: file.id === activeResult.id,
+      })),
+    );
     setSelectedFinderFileName(activeResult.fileName);
     setActiveWorkspace("chat");
   }
@@ -575,6 +601,10 @@ export default function ChatPage() {
       return;
     }
 
+    setSessionFileError(null);
+    setIsUploadingSessionFiles(true);
+
+    try {
     const formData = new FormData();
     if (sessionId) {
       formData.append("sessionId", sessionId);
@@ -601,6 +631,11 @@ export default function ChatPage() {
 
     if (Array.isArray(data.files)) {
       setUploadedFiles((prev) => {
+        const selectedAlready = prev.filter((item) => item.isSelected).length;
+        let remainingSlots = Math.max(
+          0,
+          MAX_SELECTED_CHAT_FILES - selectedAlready,
+        );
         const existingIds = new Set(prev.map((item) => item.id));
         const next = data.files
           .filter(
@@ -618,7 +653,7 @@ export default function ChatPage() {
               id: file.id,
               fileName: file.fileName,
               size: file.size,
-              isSelected: file.isSelected,
+              isSelected: remainingSlots-- > 0,
               isPersisted: file.isPersisted,
             }),
           );
@@ -626,10 +661,83 @@ export default function ChatPage() {
         return [...prev, ...next];
       });
     }
+    } catch (error) {
+      setSessionFileError(
+        error instanceof Error
+          ? error.message
+          : "Unable to upload files right now.",
+      );
+    } finally {
+      setIsUploadingSessionFiles(false);
+    }
+  }
+
+  function handleSessionFileSelectionChange(fileId: string) {
+    setSessionFileError(null);
+
+    setUploadedFiles((prev) => {
+      const target = prev.find((item) => item.id === fileId);
+      if (!target) return prev;
+
+      if (target.isSelected) {
+        return prev.map((item) =>
+          item.id === fileId ? { ...item, isSelected: false } : item,
+        );
+      }
+
+      const selectedCount = prev.filter((item) => item.isSelected).length;
+      if (selectedCount >= MAX_SELECTED_CHAT_FILES) {
+        setSessionFileError(
+          `You can select up to ${MAX_SELECTED_CHAT_FILES} files for chat at once.`,
+        );
+        return prev;
+      }
+
+      return prev.map((item) =>
+        item.id === fileId ? { ...item, isSelected: true } : item,
+      );
+    });
+  }
+
+  async function handleSessionFileRemove(fileId: string) {
+    setSessionFileError(null);
+
+    const previousFiles = uploadedFiles;
+    setUploadedFiles((prev) => prev.filter((item) => item.id !== fileId));
+
+    if (!sessionId) {
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/session/files", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionId,
+          fileId,
+        }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || `Request failed: ${response.status}`);
+      }
+    } catch (error) {
+      setUploadedFiles(previousFiles);
+      setSessionFileError(
+        error instanceof Error
+          ? error.message
+          : "Unable to remove this file right now.",
+      );
+    }
   }
 
   const selectedFileCount = uploadedFiles.filter(
-    (item) => item.isSelected,
+    (item) => item.isSelected && item.isPersisted,
   ).length;
   const activeSortingView =
     sortingPlan?.views.find((view) => view.id === activeSortingViewId) ??
@@ -696,10 +804,86 @@ export default function ChatPage() {
               </div>
             </header>
 
+            <section className="chat-session-files">
+              <div className="chat-session-files-header">
+                <div>
+                  <p className="chat-session-files-kicker">Session files</p>
+                  <h3 className="chat-session-files-title">
+                    Select up to {MAX_SELECTED_CHAT_FILES} files before chatting
+                  </h3>
+                </div>
+                <span className="chat-session-files-count">
+                  {selectedFileCount}/{MAX_SELECTED_CHAT_FILES} selected
+                </span>
+              </div>
+
+              <p className="chat-session-files-copy">
+                Upload files once under this session, then choose the exact files
+                you want Whiteboard to use in chat.
+              </p>
+
+              <div className="chat-session-files-upload">
+                <FileUpload
+                  onFilesChange={(files) => {
+                    void handleUploadFiles(files);
+                  }}
+                  selectedFiles={[]}
+                  hideFileList
+                />
+                {isUploadingSessionFiles && (
+                  <p className="chat-session-files-uploading">Uploading files...</p>
+                )}
+              </div>
+
+              {sessionFileError && (
+                <p className="chat-session-files-error" role="alert">
+                  {sessionFileError}
+                </p>
+              )}
+
+              {uploadedFiles.length === 0 ? (
+                <div className="chat-session-files-empty">
+                  No files uploaded yet for this session.
+                </div>
+              ) : (
+                <ul className="chat-session-files-list">
+                  {uploadedFiles.map((file) => (
+                    <li key={file.id} className="chat-session-files-item">
+                      <label className="chat-session-files-checkbox-row">
+                        <input
+                          type="checkbox"
+                          checked={file.isSelected}
+                          onChange={() => handleSessionFileSelectionChange(file.id)}
+                          className="chat-session-files-checkbox"
+                        />
+                        <span className="chat-session-files-name">{file.fileName}</span>
+                      </label>
+                      <div className="chat-session-files-meta">
+                        <span className="chat-session-files-size">
+                          {Math.max(1, Math.round(file.size / 1024))} KB
+                        </span>
+                        {file.isPersisted && (
+                          <span className="chat-session-files-badge">Saved</span>
+                        )}
+                        <button
+                          type="button"
+                          className="chat-session-files-remove"
+                          onClick={() => {
+                            void handleSessionFileRemove(file.id);
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
             {!persistedDocText && (
               <div className="chat-hint-banner">
-                Upload files, tick the ones you want to use, then ask your
-                question.
+                Select files above, then ask your question.
               </div>
             )}
 
@@ -736,10 +920,8 @@ export default function ChatPage() {
               />
               <ChatBar
                 onSendMessage={handleNewMessage}
-                onUploadFiles={handleUploadFiles}
                 isSending={isSending}
-                uploadedFiles={uploadedFiles}
-                onUploadedFilesChange={setUploadedFiles}
+                selectedFileCount={selectedFileCount}
               />
             </div>
           </>
