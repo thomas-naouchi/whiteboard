@@ -57,7 +57,9 @@
   border-radius: 0.8rem;
   color: rgb(245 245 240 / 0.68);
   cursor: pointer;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 0.9rem;
   padding: 0.7rem 0.85rem;
   text-align: left;

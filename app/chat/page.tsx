@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Home, FileText, Search, ArrowUpDown } from "lucide-react";
 import ChatBar, { type ChatUploadItem } from "./components/ChatBar";
 import ChatHistory, { type ChatMessage } from "./components/ChatHistory";
 import "./chat.css";
@@ -173,15 +174,18 @@ export default function ChatPage() {
       setSessionId(stored);
 
       Promise.all([
-        fetch(`/api/session/messages?sessionId=${encodeURIComponent(stored)}`).then((res) =>
-          res.json(),
-        ),
-        fetch(`/api/session/files?sessionId=${encodeURIComponent(stored)}`).then((res) =>
-          res.json(),
-        ),
+        fetch(
+          `/api/session/messages?sessionId=${encodeURIComponent(stored)}`,
+        ).then((res) => res.json()),
+        fetch(
+          `/api/session/files?sessionId=${encodeURIComponent(stored)}`,
+        ).then((res) => res.json()),
       ])
         .then(([messageData, fileData]) => {
-          if (Array.isArray(messageData.messages) && messageData.messages.length > 0) {
+          if (
+            Array.isArray(messageData.messages) &&
+            messageData.messages.length > 0
+          ) {
             setMessages(
               messageData.messages.map(
                 (m: { id: string; role: string; content: string }) => ({
@@ -239,7 +243,9 @@ export default function ChatPage() {
     setIsSending(true);
 
     const selectedNewFiles = files
-      .filter((item): item is ChatUploadItem & { file: File } => Boolean(item.file))
+      .filter((item): item is ChatUploadItem & { file: File } =>
+        Boolean(item.file),
+      )
       .map((item) => item.file);
     const selectedPersistedFileIds = files
       .filter((item) => item.isPersisted)
@@ -268,7 +274,10 @@ export default function ChatPage() {
         formData.append("sessionId", sessionId);
       }
       if (selectedPersistedFileIds.length > 0) {
-        formData.append("selectedFileIds", JSON.stringify(selectedPersistedFileIds));
+        formData.append(
+          "selectedFileIds",
+          JSON.stringify(selectedPersistedFileIds),
+        );
       }
       for (const file of selectedNewFiles) {
         formData.append("files", file);
@@ -446,7 +455,9 @@ export default function ChatPage() {
       .filter((item) => item.isSelected && item.isPersisted)
       .map((item) => item.id);
     const selectedCount = selectedPersistedFileIds.length;
-    const sessionCount = uploadedFiles.filter((item) => item.isPersisted).length;
+    const sessionCount = uploadedFiles.filter(
+      (item) => item.isPersisted,
+    ).length;
     const scopedCount = sortScope === "selected" ? selectedCount : sessionCount;
 
     if (sortScope === "selected" && selectedCount === 0) {
@@ -637,7 +648,7 @@ export default function ChatPage() {
     null;
   const visibleSortingFeed = isSorting
     ? CLIENT_SORT_STAGES.slice(0, sortingFeedStep + 1)
-    : sortingPlan?.activity ?? [];
+    : (sortingPlan?.activity ?? []);
 
   return (
     <main className="chat-shell">
@@ -650,6 +661,7 @@ export default function ChatPage() {
 
         <nav className="chat-sidebar-nav">
           <a className="chat-sidebar-link" href="/">
+            <Home size={14} />
             Home
           </a>
           <button
@@ -659,6 +671,7 @@ export default function ChatPage() {
             }`}
             onClick={() => setActiveWorkspace("chat")}
           >
+            <FileText size={14} />
             Chat about files
           </button>
           <button
@@ -668,6 +681,7 @@ export default function ChatPage() {
             }`}
             onClick={() => setActiveWorkspace("finder")}
           >
+            <Search size={14} />
             Find a file
           </button>
           <button
@@ -677,6 +691,7 @@ export default function ChatPage() {
             }`}
             onClick={() => setActiveWorkspace("sorting")}
           >
+            <ArrowUpDown size={14} />
             Sort files
           </button>
         </nav>
@@ -793,7 +808,10 @@ export default function ChatPage() {
             </div>
 
             {retrievalError && (
-              <p className="retrieval-feedback retrieval-feedback-error" role="alert">
+              <p
+                className="retrieval-feedback retrieval-feedback-error"
+                role="alert"
+              >
                 {retrievalError}
               </p>
             )}
@@ -829,21 +847,21 @@ export default function ChatPage() {
                           <span className="retrieval-result-type">
                             {result.fileType}
                           </span>
-                        <span className="retrieval-result-confidence">
-                          {result.confidence}
-                        </span>
-                      </div>
-                      <h4 className="retrieval-result-name">
-                        {result.fileName}
-                      </h4>
-                      <p className="retrieval-result-match-type">
-                        {result.matchType}
-                      </p>
-                      <p className="retrieval-result-summary">
-                        {result.summary}
-                      </p>
-                      <span className="retrieval-result-page">
-                        {result.pageLabel}
+                          <span className="retrieval-result-confidence">
+                            {result.confidence}
+                          </span>
+                        </div>
+                        <h4 className="retrieval-result-name">
+                          {result.fileName}
+                        </h4>
+                        <p className="retrieval-result-match-type">
+                          {result.matchType}
+                        </p>
+                        <p className="retrieval-result-summary">
+                          {result.summary}
+                        </p>
+                        <span className="retrieval-result-page">
+                          {result.pageLabel}
                         </span>
                       </button>
                     );
@@ -914,7 +932,6 @@ export default function ChatPage() {
                 </article>
               )}
             </div>
-
           </section>
         ) : (
           <section id="file-sorting" className="sorting-panel">
@@ -942,7 +959,9 @@ export default function ChatPage() {
                   <button
                     type="button"
                     className={`sorting-scope-button ${
-                      sortScope === "selected" ? "sorting-scope-button-active" : ""
+                      sortScope === "selected"
+                        ? "sorting-scope-button-active"
+                        : ""
                     }`}
                     onClick={() => setSortScope("selected")}
                   >
@@ -951,7 +970,9 @@ export default function ChatPage() {
                   <button
                     type="button"
                     className={`sorting-scope-button ${
-                      sortScope === "session" ? "sorting-scope-button-active" : ""
+                      sortScope === "session"
+                        ? "sorting-scope-button-active"
+                        : ""
                     }`}
                     onClick={() => setSortScope("session")}
                   >
@@ -966,7 +987,9 @@ export default function ChatPage() {
                 </span>
                 <input
                   value={sortingInstruction}
-                  onChange={(event) => setSortingInstruction(event.target.value)}
+                  onChange={(event) =>
+                    setSortingInstruction(event.target.value)
+                  }
                   className="sorting-instruction-input"
                   placeholder="favor internship tracks, clients, or project themes"
                 />
@@ -987,19 +1010,24 @@ export default function ChatPage() {
                   onClick={() => void handleDownloadSortedPackage()}
                   disabled={!sortingPlan || isExportingSort}
                 >
-                  {isExportingSort ? "Preparing zip..." : "Download folder pack"}
+                  {isExportingSort
+                    ? "Preparing zip..."
+                    : "Download folder pack"}
                 </button>
               </div>
             </div>
 
             <p className="sorting-helper-copy">
-              Selected scope uses the checked files from chat. Session scope uses
-              every persisted file in this session. The sorter currently caps the
-              job at 20 files for speed and reliability.
+              Selected scope uses the checked files from chat. Session scope
+              uses every persisted file in this session. The sorter currently
+              caps the job at 20 files for speed and reliability.
             </p>
 
             {sortingError && (
-              <p className="sorting-feedback sorting-feedback-error" role="alert">
+              <p
+                className="sorting-feedback sorting-feedback-error"
+                role="alert"
+              >
                 {sortingError}
               </p>
             )}
@@ -1032,7 +1060,10 @@ export default function ChatPage() {
                 ) : (
                   <ul className="sorting-activity-list">
                     {visibleSortingFeed.map((item, index) => (
-                      <li key={`${item.label}-${index}`} className="sorting-activity-item">
+                      <li
+                        key={`${item.label}-${index}`}
+                        className="sorting-activity-item"
+                      >
                         <span
                           className={`sorting-activity-dot ${
                             isSorting && index === visibleSortingFeed.length - 1
@@ -1042,7 +1073,9 @@ export default function ChatPage() {
                         />
                         <div>
                           <p className="sorting-activity-label">{item.label}</p>
-                          <p className="sorting-activity-detail">{item.detail}</p>
+                          <p className="sorting-activity-detail">
+                            {item.detail}
+                          </p>
                         </div>
                       </li>
                     ))}
@@ -1099,11 +1132,16 @@ export default function ChatPage() {
 
                     <div className="sorting-tree">
                       {activeSortingView.folders.map((folder) => (
-                        <article key={folder.name} className="sorting-folder-card">
+                        <article
+                          key={folder.name}
+                          className="sorting-folder-card"
+                        >
                           <div className="sorting-folder-topline">
                             <div>
                               <p className="sorting-folder-label">Folder</p>
-                              <h5 className="sorting-folder-name">{folder.name}</h5>
+                              <h5 className="sorting-folder-name">
+                                {folder.name}
+                              </h5>
                             </div>
                             <span className="sorting-folder-count">
                               {folder.fileCount} file
@@ -1116,7 +1154,10 @@ export default function ChatPage() {
 
                           <ul className="sorting-folder-file-list">
                             {folder.files.map((file) => (
-                              <li key={`${folder.name}-${file.id}`} className="sorting-folder-file">
+                              <li
+                                key={`${folder.name}-${file.id}`}
+                                className="sorting-folder-file"
+                              >
                                 <div>
                                   <p className="sorting-folder-file-name">
                                     {file.fileName}
