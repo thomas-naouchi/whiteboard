@@ -535,12 +535,13 @@
   font-size: 0.77rem;
   font-weight: 600;
   padding: 0.35rem 0.68rem;
-  transition: background-color 160ms ease, border-color 160ms ease;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
 .chat-history-clear:hover:not(:disabled) {
-  background: rgb(255 255 255 / 0.06);
-  border-color: rgb(255 255 255 / 0.22);
+  background: rgb(180 30 30 / 0.15);
+  border-color: rgb(220 60 60 / 0.35);
+  color: rgb(255 180 180);
 }
 
 .chat-history-clear:disabled {
