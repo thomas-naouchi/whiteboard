@@ -24,13 +24,31 @@
   background: linear-gradient(90deg, #f4f1ea, #cfc9bd);
   border-radius: 999px;
   color: #090909;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   margin-bottom: 0.7rem;
   padding: 0.2rem 0.55rem;
   text-transform: uppercase;
+}
+
+.chat-sidebar-brand-badge::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #16a34a;
+  flex-shrink: 0;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.75); }
 }
 
 .chat-sidebar-brand h1 {
