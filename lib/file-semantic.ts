@@ -7,7 +7,11 @@ const EMBEDDING_MODEL =
   process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small";
 
 function normalizeWhitespace(value: string) {
-  return value.replace(/\s+/g, " ").trim();
+  return value
+    .replace(/\u0000/g, "")
+    .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function getEmbeddingClient() {

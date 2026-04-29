@@ -7,6 +7,7 @@ import {
   type SortableFileRecord,
 } from "@/lib/file-sorting";
 import { isMissingMetadataColumnsError } from "@/lib/file-metadata";
+import { toNumericEmbedding } from "@/lib/file-semantic";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 
 type WhiteboardFileRow = {
@@ -19,6 +20,10 @@ type WhiteboardFileRow = {
   tags: string[] | null;
   summary_excerpt: string | null;
   search_text: string | null;
+};
+type WhiteboardChunkRow = {
+  file_id: string;
+  embedding: unknown;
 };
 
 function getErrorMessage(error: unknown) {
@@ -79,7 +84,7 @@ async function fetchSessionFiles(params: {
     throw error;
   }
 
-  return ((data ?? []) as WhiteboardFileRow[]).map(
+  const files = ((data ?? []) as WhiteboardFileRow[]).map(
     (row): SortableFileRecord => ({
       id: row.id,
       fileName: row.file_name,
@@ -92,6 +97,32 @@ async function fetchSessionFiles(params: {
       searchText: row.search_text,
     }),
   );
+
+  try {
+    const { data: chunks, error: chunkError } = await supabase
+      .from("whiteboard_file_chunks")
+      .select("file_id, embedding")
+      .eq("session_id", params.sessionId);
+
+    if (!chunkError && Array.isArray(chunks)) {
+      const byFile = new Map<string, number[][]>();
+      (chunks as WhiteboardChunkRow[]).forEach((chunk) => {
+        const embedding = toNumericEmbedding(chunk.embedding);
+        if (!embedding) return;
+        const list = byFile.get(chunk.file_id) ?? [];
+        list.push(embedding);
+        byFile.set(chunk.file_id, list);
+      });
+
+      files.forEach((file) => {
+        file.semanticEmbeddings = byFile.get(file.id) ?? [];
+      });
+    }
+  } catch (error) {
+    console.error("Sorting semantic chunk fetch failed:", error);
+  }
+
+  return files;
 }
 
 export async function POST(req: Request) {
@@ -152,7 +183,7 @@ export async function POST(req: Request) {
     }
 
     const resolvedIntent = await resolveSortingIntent(instruction);
-    const plan = buildSortingPlan({
+    const plan = await buildSortingPlan({
       files,
       scope,
       instruction,

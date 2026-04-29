@@ -16,6 +16,9 @@ const SEARCH_TEXT_LIMIT = 24_000;
 const SEMANTIC_SIMILARITY_THRESHOLD = 0.2;
 const SEMANTIC_SCORE_MULTIPLIER = 90;
 const HIGH_SEMANTIC_SIMILARITY_THRESHOLD = 0.42;
+const SEMANTIC_ONLY_RESULT_MIN_SIMILARITY = 0.26;
+const MIN_LEXICAL_SCORE_FOR_RESULT = 14;
+const MIN_TOTAL_SCORE_FOR_RESULT = 18;
 const SEMANTIC_BACKFILL_FILE_LIMIT = 8;
 const SEARCH_STOP_WORDS = new Set([
   "a",
@@ -552,6 +555,10 @@ export async function POST(req: Request) {
         semanticSimilarity,
         semanticChunkText: semanticMatch?.chunkText ?? null,
         score: lexicalScore + semanticScore,
+        isSemanticOnly:
+          lexicalScore === 0 &&
+          semanticSimilarity >= SEMANTIC_ONLY_RESULT_MIN_SIMILARITY,
+        hasEnoughLexicalSignal: lexicalScore >= MIN_LEXICAL_SCORE_FOR_RESULT,
       };
     });
 
@@ -564,6 +571,8 @@ export async function POST(req: Request) {
           semanticChunkText,
           semanticSimilarity,
           score,
+          isSemanticOnly,
+          hasEnoughLexicalSignal,
         }) => ({
           ...classifyMatch({
             row,
@@ -591,12 +600,18 @@ export async function POST(req: Request) {
                 ? "Stored excerpt"
                 : "Stored summary",
           score,
+          isSemanticOnly,
+          hasEnoughLexicalSignal,
         }),
       )
-      .filter((row) => row.score > 0)
+      .filter(
+        (row) =>
+          row.score >= MIN_TOTAL_SCORE_FOR_RESULT &&
+          (row.hasEnoughLexicalSignal || row.isSemanticOnly),
+      )
       .sort((a, b) => b.score - a.score)
       .slice(0, MAX_RESULTS)
-      .map(({ score, ...result }) => result);
+      .map(({ score, isSemanticOnly, hasEnoughLexicalSignal, ...result }) => result);
 
     return NextResponse.json({ results });
   } catch (error) {
