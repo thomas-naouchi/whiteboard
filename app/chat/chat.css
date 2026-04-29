@@ -24,13 +24,31 @@
   background: linear-gradient(90deg, #f4f1ea, #cfc9bd);
   border-radius: 999px;
   color: #090909;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   margin-bottom: 0.7rem;
   padding: 0.2rem 0.55rem;
   text-transform: uppercase;
+}
+
+.chat-sidebar-brand-badge::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #16a34a;
+  flex-shrink: 0;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.75); }
 }
 
 .chat-sidebar-brand h1 {
@@ -57,7 +75,9 @@
   border-radius: 0.8rem;
   color: rgb(245 245 240 / 0.68);
   cursor: pointer;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 0.9rem;
   padding: 0.7rem 0.85rem;
   text-align: left;
@@ -75,6 +95,7 @@
 .chat-sidebar-link-active {
   background: rgb(255 255 255 / 0.08);
   border-color: rgb(255 255 255 / 0.18);
+  border-left: 2px solid #fff;
   color: #fff;
 }
 
@@ -101,10 +122,10 @@
 }
 
 .chat-main-chip {
-  background: rgb(255 255 255 / 0.08);
-  border: 1px solid rgb(255 255 255 / 0.12);
+  background: rgb(180 30 30 / 0.15);
+  border: 1px solid rgb(220 60 60 / 0.35);
   border-radius: 0.4rem;
-  color: #f5f5f0;
+  color: rgb(255 180 180);
   font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -674,12 +695,13 @@
   font-size: 0.77rem;
   font-weight: 600;
   padding: 0.35rem 0.68rem;
-  transition: background-color 160ms ease, border-color 160ms ease;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
 .chat-history-clear:hover:not(:disabled) {
-  background: rgb(255 255 255 / 0.06);
-  border-color: rgb(255 255 255 / 0.22);
+  background: rgb(180 30 30 / 0.15);
+  border-color: rgb(220 60 60 / 0.35);
+  color: rgb(255 180 180);
 }
 
 .chat-history-clear:disabled {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { extractTextFromBuffer } from "@/lib/file-text";
 import {
+  buildSemanticChunks,
   cosineSimilarity,
   createEmbeddings,
   isMissingChunksTableError,
@@ -15,6 +16,10 @@ const SEARCH_TEXT_LIMIT = 24_000;
 const SEMANTIC_SIMILARITY_THRESHOLD = 0.2;
 const SEMANTIC_SCORE_MULTIPLIER = 90;
 const HIGH_SEMANTIC_SIMILARITY_THRESHOLD = 0.42;
+const SEMANTIC_ONLY_RESULT_MIN_SIMILARITY = 0.26;
+const MIN_LEXICAL_SCORE_FOR_RESULT = 14;
+const MIN_TOTAL_SCORE_FOR_RESULT = 18;
+const SEMANTIC_BACKFILL_FILE_LIMIT = 8;
 const SEARCH_STOP_WORDS = new Set([
   "a",
   "an",
@@ -68,9 +73,7 @@ function splitQuery(query: string) {
     .toLowerCase()
     .split(" ")
     .map((part) => part.trim())
-    .filter(
-      (part) => part.length >= 2 && !SEARCH_STOP_WORDS.has(part),
-    );
+    .filter((part) => part.length >= 2 && !SEARCH_STOP_WORDS.has(part));
 }
 
 function scoreRow(
@@ -180,8 +183,14 @@ function classifyMatch(params: {
   semanticScore: number;
   semanticSimilarity: number;
 }) {
-  const { row, query, queryTokens, lexicalScore, semanticScore, semanticSimilarity } =
-    params;
+  const {
+    row,
+    query,
+    queryTokens,
+    lexicalScore,
+    semanticScore,
+    semanticSimilarity,
+  } = params;
   const normalizedQuery = query.toLowerCase();
   const fileName = row.file_name.toLowerCase();
   const summary = (row.summary_excerpt ?? "").toLowerCase();
@@ -208,7 +217,10 @@ function classifyMatch(params: {
     };
   }
 
-  if (semanticScore > lexicalScore && semanticSimilarity >= HIGH_SEMANTIC_SIMILARITY_THRESHOLD) {
+  if (
+    semanticScore > lexicalScore &&
+    semanticSimilarity >= HIGH_SEMANTIC_SIMILARITY_THRESHOLD
+  ) {
     return {
       matchType: "Semantic match",
       matchReason:
@@ -285,7 +297,10 @@ async function getSemanticMatches(
 
     const chunks = (data ?? []) as WhiteboardChunkRow[];
     if (chunks.length === 0) {
-      return new Map<string, { similarity: number; chunkText: string | null }>();
+      return new Map<
+        string,
+        { similarity: number; chunkText: string | null }
+      >();
     }
 
     const [queryEmbedding] = await createEmbeddings([query]);
@@ -321,7 +336,74 @@ async function getSemanticMatches(
   }
 }
 
-function buildSemanticExcerpt(chunkText: string | null, query: string, queryTokens: string[]) {
+async function backfillSemanticChunks(
+  supabase: ReturnType<typeof getSupabaseServerClient>,
+  sessionId: string,
+  rows: WhiteboardFileRow[],
+) {
+  if (rows.length === 0) {
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("whiteboard_file_chunks")
+      .select("file_id")
+      .eq("session_id", sessionId);
+
+    if (error) {
+      if (!isMissingChunksTableError(error)) {
+        throw error;
+      }
+      return;
+    }
+
+    const fileIdsWithChunks = new Set(
+      (data ?? [])
+        .map((row) => row.file_id)
+        .filter((value): value is string => typeof value === "string"),
+    );
+
+    const candidates = rows
+      .filter((row) => !fileIdsWithChunks.has(row.id))
+      .filter((row) => normalizeWhitespace(row.search_text ?? "").length > 0)
+      .slice(0, SEMANTIC_BACKFILL_FILE_LIMIT);
+
+    for (const row of candidates) {
+      const chunks = buildSemanticChunks(row.search_text ?? "");
+      if (chunks.length === 0) {
+        continue;
+      }
+
+      const embeddings = await createEmbeddings(chunks);
+      const chunkRows = chunks.map((chunkText, index) => ({
+        file_id: row.id,
+        session_id: sessionId,
+        chunk_index: index,
+        chunk_text: chunkText,
+        embedding: embeddings[index],
+      }));
+
+      const { error: insertError } = await supabase
+        .from("whiteboard_file_chunks")
+        .insert(chunkRows);
+
+      if (insertError && !isMissingChunksTableError(insertError)) {
+        throw insertError;
+      }
+    }
+  } catch (error) {
+    if (!isMissingChunksTableError(error)) {
+      console.error("Semantic chunk backfill error:", error);
+    }
+  }
+}
+
+function buildSemanticExcerpt(
+  chunkText: string | null,
+  query: string,
+  queryTokens: string[],
+) {
   if (!chunkText) {
     return "No semantic preview available for this file yet.";
   }
@@ -409,7 +491,9 @@ export async function POST(req: Request) {
     if (error && isMissingMetadataColumnError(error)) {
       const fallbackWithPartialMetadata = await supabase
         .from("whiteboard_files")
-        .select("id, file_name, storage_path, tags, summary_excerpt, created_at")
+        .select(
+          "id, file_name, storage_path, tags, summary_excerpt, created_at",
+        )
         .eq("session_id", sessionId)
         .order("created_at", { ascending: false });
 
@@ -442,12 +526,17 @@ export async function POST(req: Request) {
 
     const rows = (data ?? []) as WhiteboardFileRow[];
     const queryTokens = splitQuery(query);
-    const semanticMatches = await getSemanticMatches(supabase, sessionId, query);
     const hydratedRows = await Promise.all(
       rows.map(async (row) => ({
         ...row,
         search_text: await hydrateSearchText(supabase, row),
       })),
+    );
+    await backfillSemanticChunks(supabase, sessionId, hydratedRows);
+    const semanticMatches = await getSemanticMatches(
+      supabase,
+      sessionId,
+      query,
     );
 
     const scoredRows = hydratedRows.map((row) => {
@@ -466,6 +555,10 @@ export async function POST(req: Request) {
         semanticSimilarity,
         semanticChunkText: semanticMatch?.chunkText ?? null,
         score: lexicalScore + semanticScore,
+        isSemanticOnly:
+          lexicalScore === 0 &&
+          semanticSimilarity >= SEMANTIC_ONLY_RESULT_MIN_SIMILARITY,
+        hasEnoughLexicalSignal: lexicalScore >= MIN_LEXICAL_SCORE_FOR_RESULT,
       };
     });
 
@@ -478,36 +571,47 @@ export async function POST(req: Request) {
           semanticChunkText,
           semanticSimilarity,
           score,
+          isSemanticOnly,
+          hasEnoughLexicalSignal,
         }) => ({
-        ...classifyMatch({
-          row,
-          query,
-          queryTokens,
-          lexicalScore,
-          semanticScore,
-          semanticSimilarity,
+          ...classifyMatch({
+            row,
+            query,
+            queryTokens,
+            lexicalScore,
+            semanticScore,
+            semanticSimilarity,
+          }),
+          id: row.id,
+          fileName: row.file_name,
+          fileType: inferFileType(row.file_name),
+          matchedText:
+            lexicalScore > 0
+              ? buildExcerpt(row, query, queryTokens)
+              : buildSemanticExcerpt(semanticChunkText, query, queryTokens),
+          summary:
+            row.summary_excerpt ??
+            "Stored in this session and available to search.",
+          pageLabel:
+            semanticScore > lexicalScore &&
+            semanticSimilarity >= HIGH_SEMANTIC_SIMILARITY_THRESHOLD
+              ? "Semantic excerpt"
+              : row.search_text
+                ? "Stored excerpt"
+                : "Stored summary",
+          score,
+          isSemanticOnly,
+          hasEnoughLexicalSignal,
         }),
-        id: row.id,
-        fileName: row.file_name,
-        fileType: inferFileType(row.file_name),
-        matchedText:
-          lexicalScore > 0
-            ? buildExcerpt(row, query, queryTokens)
-            : buildSemanticExcerpt(semanticChunkText, query, queryTokens),
-        summary:
-          row.summary_excerpt ?? "Stored in this session and available to search.",
-        pageLabel: semanticScore > lexicalScore && semanticSimilarity >= HIGH_SEMANTIC_SIMILARITY_THRESHOLD
-          ? "Semantic excerpt"
-          : row.search_text
-            ? "Stored excerpt"
-            : "Stored summary",
-        score,
-      }),
       )
-      .filter((row) => row.score > 0)
+      .filter(
+        (row) =>
+          row.score >= MIN_TOTAL_SCORE_FOR_RESULT &&
+          (row.hasEnoughLexicalSignal || row.isSemanticOnly),
+      )
       .sort((a, b) => b.score - a.score)
       .slice(0, MAX_RESULTS)
-      .map(({ score, ...result }) => result);
+      .map(({ score, isSemanticOnly, hasEnoughLexicalSignal, ...result }) => result);
 
     return NextResponse.json({ results });
   } catch (error) {
