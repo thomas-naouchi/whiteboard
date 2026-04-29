@@ -163,13 +163,21 @@ export function generateTags(fileName: string, extractedText: string) {
 }
 
 export function buildSummaryExcerpt(extractedText: string) {
-  const compact = extractedText.replace(/\s+/g, " ").trim();
+  const compact = extractedText
+    .replace(/\u0000/g, "")
+    .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!compact) return null;
   return compact.slice(0, EXCERPT_LENGTH);
 }
 
 export function buildSearchText(extractedText: string) {
-  const compact = extractedText.replace(/\s+/g, " ").trim();
+  const compact = extractedText
+    .replace(/\u0000/g, "")
+    .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!compact) return null;
   return compact.slice(0, SEARCH_TEXT_LIMIT);
 }

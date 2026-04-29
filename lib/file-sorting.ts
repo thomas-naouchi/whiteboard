@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { cosineSimilarity, createEmbeddings } from "@/lib/file-semantic";
 
 export const SORTABLE_FILE_LIMIT = 20;
 const SORTING_INTENT_MODEL = process.env.OPENAI_SORTING_MODEL ?? "gpt-4.1-mini";
@@ -38,6 +39,80 @@ const STRUCTURAL_TOPIC_NOISE = new Set([
 ]);
 
 const KNOWN_CONCEPT_FAMILIES: Record<string, string[]> = {
+  shopping: [
+    "shopping",
+    "groceries",
+    "grocery",
+    "electronics",
+    "retail",
+    "store",
+    "purchase",
+    "purchases",
+    "receipt",
+    "receipts",
+    "buy",
+    "cart",
+    "inventory",
+    "stock",
+    "price",
+    "prices",
+  ],
+  groceries: [
+    "groceries",
+    "grocery",
+    "shopping",
+    "retail",
+    "store",
+    "inventory",
+    "stock",
+  ],
+  electronics: [
+    "electronics",
+    "shopping",
+    "retail",
+    "store",
+    "inventory",
+    "stock",
+    "device",
+    "devices",
+  ],
+  "software engineering": [
+    "software engineering",
+    "agile",
+    "scrum",
+    "kanban",
+    "sprint",
+    "sprints",
+    "backlog",
+    "roadmap",
+    "milestone",
+    "milestones",
+    "user story",
+    "user stories",
+    "epic",
+    "epics",
+    "jira",
+    "product requirements",
+    "product requirement",
+  ],
+  agile: [
+    "agile",
+    "scrum",
+    "kanban",
+    "sprint",
+    "backlog",
+    "roadmap",
+    "software engineering",
+  ],
+  roadmap: [
+    "roadmap",
+    "milestone",
+    "milestones",
+    "sprint",
+    "backlog",
+    "agile",
+    "software engineering",
+  ],
   "deep learning": [
     "deep learning",
     "machine learning",
@@ -194,6 +269,7 @@ export interface SortableFileRecord {
   tags: string[];
   summaryExcerpt: string | null;
   searchText: string | null;
+  semanticEmbeddings?: number[][];
 }
 
 export interface SortingViewFile {
@@ -809,6 +885,80 @@ function buildHeuristicBuckets(intent: string) {
   return buckets;
 }
 
+function canonicalFamilyKeyFromTerm(term: string) {
+  const normalized = normalizeToken(term);
+  if (!normalized) return null;
+
+  for (const [family, aliases] of Object.entries(KNOWN_CONCEPT_FAMILIES)) {
+    const normalizedFamily = normalizeToken(family);
+    const normalizedAliases = aliases.map((alias) => normalizeToken(alias));
+
+    if (
+      normalized === normalizedFamily ||
+      normalizedAliases.includes(normalized) ||
+      normalized.includes(normalizedFamily)
+    ) {
+      return normalizedFamily;
+    }
+  }
+
+  return null;
+}
+
+function mergeBucketsByConceptFamily(buckets: ParsedIntentBucket[]) {
+  const merged = new Map<string, ParsedIntentBucket>();
+
+  for (const bucket of buckets) {
+    const keys = [
+      canonicalFamilyKeyFromTerm(bucket.folder),
+      ...bucket.concepts
+        .map((concept) => canonicalFamilyKeyFromTerm(concept))
+        .filter((value): value is string => Boolean(value)),
+    ];
+    const mergeKey = keys.find(Boolean);
+
+    if (!mergeKey) {
+      const key = `raw:${normalizeToken(bucket.folder)}:${bucket.fileClass}`;
+      if (!merged.has(key)) {
+        merged.set(key, {
+          ...bucket,
+          concepts: [...bucket.concepts],
+        });
+      } else {
+        const current = merged.get(key)!;
+        current.concepts = uniqueTerms([...current.concepts, ...bucket.concepts]);
+        current.isolate = current.isolate || bucket.isolate;
+      }
+      continue;
+    }
+
+    const key = `family:${mergeKey}`;
+    if (!merged.has(key)) {
+      merged.set(key, {
+        folder: titleCase(mergeKey),
+        concepts: uniqueTerms([bucket.folder, ...bucket.concepts, mergeKey]),
+        fileClass: bucket.fileClass === "fallback" ? "generic" : bucket.fileClass,
+        isolate: bucket.isolate,
+      });
+      continue;
+    }
+
+    const current = merged.get(key)!;
+    current.concepts = uniqueTerms([
+      ...current.concepts,
+      bucket.folder,
+      ...bucket.concepts,
+      mergeKey,
+    ]);
+    current.isolate = current.isolate || bucket.isolate;
+    if (current.fileClass === "generic" && bucket.fileClass !== "fallback") {
+      current.fileClass = bucket.fileClass;
+    }
+  }
+
+  return Array.from(merged.values()).map((bucket) => normalizeBucket(bucket));
+}
+
 export async function resolveSortingIntent(intent: string): Promise<ResolvedSortingIntent> {
   const trimmed = intent.trim();
 
@@ -825,7 +975,7 @@ export async function resolveSortingIntent(intent: string): Promise<ResolvedSort
     if (llmBuckets && llmBuckets.length > 0) {
       return {
         source: "llm",
-        buckets: llmBuckets,
+        buckets: mergeBucketsByConceptFamily(llmBuckets),
       };
     }
   } catch (error) {
@@ -834,7 +984,7 @@ export async function resolveSortingIntent(intent: string): Promise<ResolvedSort
 
   return {
     source: "heuristic",
-    buckets: buildHeuristicBuckets(trimmed),
+    buckets: mergeBucketsByConceptFamily(buildHeuristicBuckets(trimmed)),
   };
 }
 
@@ -965,15 +1115,72 @@ function bestIntentCandidate(intent: string, candidates: Array<[string, number]>
   return null;
 }
 
+function maxSemanticSimilarity(
+  file: SortableFileRecord,
+  targetEmbedding: number[] | null,
+) {
+  if (!targetEmbedding || !Array.isArray(file.semanticEmbeddings)) {
+    return 0;
+  }
+
+  let best = 0;
+  for (const embedding of file.semanticEmbeddings) {
+    const similarity = cosineSimilarity(targetEmbedding, embedding);
+    if (similarity > best) {
+      best = similarity;
+    }
+  }
+
+  return best;
+}
+
+async function buildProfileSemanticTargets(profiles: BucketProfile[]) {
+  const candidates = profiles.filter(
+    (profile) => !profile.isFallback && profile.familyTerms.length > 0,
+  );
+
+  if (candidates.length === 0) {
+    return new Map<string, number[]>();
+  }
+
+  try {
+    const prompts = candidates.map((profile) =>
+      [profile.folder, ...profile.familyTerms.slice(0, 10)].join(", "),
+    );
+    const embeddings = await createEmbeddings(prompts);
+    const map = new Map<string, number[]>();
+
+    candidates.forEach((profile, index) => {
+      const embedding = embeddings[index];
+      if (Array.isArray(embedding) && embedding.length > 0) {
+        map.set(profile.folder, embedding);
+      }
+    });
+
+    return map;
+  } catch (error) {
+    console.error("Sorting semantic profile embedding failed:", error);
+    return new Map<string, number[]>();
+  }
+}
+
 function pickContentFolder(
   file: SortableFileRecord,
   intent: string,
   profiles: BucketProfile[],
+  profileSemanticTargets: Map<string, number[]>,
 ) {
+  const MIN_BUCKET_SCORE = 22;
+  const MIN_BUCKET_MARGIN = 8;
+  const HIGH_CONFIDENCE_BUCKET_SCORE = 30;
+  const HIGH_CONFIDENCE_SEMANTIC_SIMILARITY = 0.45;
+
   const primaryProfiles = profiles.filter((profile) => !profile.isFallback);
   const fallbackProfile = profiles.find((profile) => profile.isFallback);
   let bestProfile: BucketProfile | null = null;
   let bestScore = 0;
+  let bestSemanticSimilarity = 0;
+  let secondBestScore = 0;
 
   for (const profile of primaryProfiles) {
     let score = 0;
@@ -986,19 +1193,62 @@ function pickContentFolder(
       score += scoreFileAgainstConcept(file, term);
     }
 
+    const profileTarget = profileSemanticTargets.get(profile.folder) ?? null;
+    const semanticSimilarity = maxSemanticSimilarity(file, profileTarget);
+    if (semanticSimilarity >= 0.2) {
+      score += Math.round(semanticSimilarity * 40);
+    }
+
     if (score > bestScore) {
+      secondBestScore = bestScore;
       bestScore = score;
       bestProfile = profile;
+      bestSemanticSimilarity = semanticSimilarity;
+    } else if (score > secondBestScore) {
+      secondBestScore = score;
     }
   }
 
-  if (bestProfile && bestScore >= 12) {
+  const bestMargin = bestScore - secondBestScore;
+  const isHighConfidenceMatch =
+    bestScore >= HIGH_CONFIDENCE_BUCKET_SCORE ||
+    (bestSemanticSimilarity >= HIGH_CONFIDENCE_SEMANTIC_SIMILARITY &&
+      bestScore >= MIN_BUCKET_SCORE);
+  const isClearWinner =
+    bestScore >= MIN_BUCKET_SCORE && bestMargin >= MIN_BUCKET_MARGIN;
+
+  if (bestProfile && (isHighConfidenceMatch || isClearWinner)) {
+    const semanticSuffix =
+      bestSemanticSimilarity >= 0.25
+        ? ` Semantic similarity ${(bestSemanticSimilarity * 100).toFixed(0)}%.`
+        : "";
+    const marginSuffix =
+      bestMargin >= MIN_BUCKET_MARGIN
+        ? ` Margin ${bestMargin}.`
+        : "";
     return {
       folder: bestProfile.folder,
       rationale: bestProfile.rationale,
       badge: bestProfile.badge,
-      reason: `${bestProfile.reasonPrefix} Score ${bestScore}.`,
+      reason: `${bestProfile.reasonPrefix} Score ${bestScore}.${semanticSuffix}${marginSuffix}`,
     };
+  }
+
+  const hasPromptedIntent = intent.trim().length > 0;
+  if (hasPromptedIntent && bestProfile) {
+    const softIntentMatch = bestScore >= 8 || bestSemanticSimilarity >= 0.18;
+    if (softIntentMatch) {
+      const semanticSuffix =
+        bestSemanticSimilarity >= 0.2
+          ? ` Semantic similarity ${(bestSemanticSimilarity * 100).toFixed(0)}%.`
+          : "";
+      return {
+        folder: bestProfile.folder,
+        rationale: bestProfile.rationale,
+        badge: bestProfile.badge,
+        reason: `${bestProfile.reasonPrefix} (Intent-first grouping) Score ${bestScore}.${semanticSuffix}`,
+      };
+    }
   }
 
   if (fallbackProfile) {
@@ -1096,7 +1346,7 @@ function makeViewFile(
   };
 }
 
-export function buildSortingPlan(params: {
+export async function buildSortingPlan(params: {
   files: SortableFileRecord[];
   scope: SortScope;
   instruction?: string | null;
@@ -1111,6 +1361,7 @@ export function buildSortingPlan(params: {
     instruction,
     params.resolvedIntent,
   );
+  const profileSemanticTargets = await buildProfileSemanticTargets(bucketProfiles);
 
   for (const file of params.files) {
     const typeGrouping = fileTypeFolder(file);
@@ -1141,6 +1392,7 @@ export function buildSortingPlan(params: {
       file,
       instruction,
       bucketProfiles,
+      profileSemanticTargets,
     );
     insertIntoFolders(
       contentFolders,
